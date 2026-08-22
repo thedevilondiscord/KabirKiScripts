@@ -1,0 +1,785 @@
+--[[
+    KRONOS CHAT — V1 SIMULATION / GUI DEMO
+    ----------------------------------------------------------------
+    This is a lightweight visual simulation of the current Kronos Chat
+    interface. It intentionally does NOT connect to Firebase, remote
+    role lists, external APIs, or game-specific remotes.
+
+    Purpose:
+      • Recreate the recognizable Kronos Chat V1-style interface
+      • Demonstrate the layout, tabs, messages, stickers and popups
+      • Keep the implementation simple and safe to modify
+
+    Place as a LocalScript in StarterPlayerScripts or StarterGui.
+]]
+
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+--// ================================================================
+--// BASIC HELPERS
+--// ================================================================
+
+local function corner(parent, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 8)
+    c.Parent = parent
+    return c
+end
+
+local function stroke(parent, thickness, color, transparency)
+    local s = Instance.new("UIStroke")
+    s.Thickness = thickness or 1
+    s.Color = color or Color3.fromRGB(255, 0, 0)
+    s.Transparency = transparency or 0
+    s.Parent = parent
+    return s
+end
+
+local function label(parent, text, size, position, textSize, color)
+    local l = Instance.new("TextLabel")
+    l.BackgroundTransparency = 1
+    l.Size = size
+    l.Position = position
+    l.Text = text
+    l.Font = Enum.Font.Gotham
+    l.TextSize = textSize or 12
+    l.TextColor3 = color or Color3.fromRGB(235, 235, 240)
+    l.TextXAlignment = Enum.TextXAlignment.Left
+    l.Parent = parent
+    return l
+end
+
+local function button(parent, text, size, position)
+    local b = Instance.new("TextButton")
+    b.AutoButtonColor = false
+    b.Size = size
+    b.Position = position
+    b.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    b.BackgroundTransparency = 0.18
+    b.BorderSizePixel = 0
+    b.Text = text
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 10
+    b.TextColor3 = Color3.fromRGB(235, 235, 240)
+    b.Parent = parent
+    corner(b, 8)
+    return b
+end
+
+--// ================================================================
+--// INTRO — V1-STYLE LIGHTWEIGHT LOADER
+--// ================================================================
+
+local Intro = Instance.new("ScreenGui")
+Intro.Name = "KronosV1Intro"
+Intro.IgnoreGuiInset = true
+Intro.ResetOnSpawn = false
+Intro.Parent = PlayerGui
+
+local IntroBG = Instance.new("Frame")
+IntroBG.Size = UDim2.fromScale(1, 1)
+IntroBG.BackgroundColor3 = Color3.fromRGB(8, 8, 12)
+IntroBG.Parent = Intro
+
+local IntroCard = Instance.new("Frame")
+IntroCard.Size = UDim2.fromOffset(460, 170)
+IntroCard.Position = UDim2.new(0.5, -230, 0.5, -85)
+IntroCard.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
+IntroCard.BorderSizePixel = 0
+IntroCard.Parent = IntroBG
+corner(IntroCard, 14)
+
+local IntroStroke = stroke(IntroCard, 2.5, Color3.fromRGB(255, 0, 0), 0.1)
+
+local IntroGradient = Instance.new("UIGradient")
+IntroGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 30, 30)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(35, 35, 45)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 30, 30)),
+})
+IntroGradient.Parent = IntroStroke
+
+local IntroTitle = label(
+    IntroCard,
+    "乂乂  KRONOS CHAT  乂乂",
+    UDim2.new(1, -30, 0, 35),
+    UDim2.fromOffset(15, 18),
+    21,
+    Color3.fromRGB(255, 255, 255)
+)
+IntroTitle.TextXAlignment = Enum.TextXAlignment.Center
+IntroTitle.Font = Enum.Font.GothamBold
+
+local IntroSub = label(
+    IntroCard,
+    "Version 1 Simulation",
+    UDim2.new(1, -30, 0, 20),
+    UDim2.fromOffset(15, 52),
+    11,
+    Color3.fromRGB(155, 155, 170)
+)
+IntroSub.TextXAlignment = Enum.TextXAlignment.Center
+
+local IntroStatus = label(
+    IntroCard,
+    "> Preparing interface...",
+    UDim2.new(1, -50, 0, 20),
+    UDim2.fromOffset(25, 88),
+    11,
+    Color3.fromRGB(0, 255, 150)
+)
+
+local LoadBG = Instance.new("Frame")
+LoadBG.Size = UDim2.new(1, -50, 0, 6)
+LoadBG.Position = UDim2.fromOffset(25, 124)
+LoadBG.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+LoadBG.BorderSizePixel = 0
+LoadBG.Parent = IntroCard
+corner(LoadBG, 5)
+
+local LoadFill = Instance.new("Frame")
+LoadFill.Size = UDim2.new(0, 0, 1, 0)
+LoadFill.BackgroundColor3 = Color3.fromRGB(255, 30, 30)
+LoadFill.BorderSizePixel = 0
+LoadFill.Parent = LoadBG
+corner(LoadFill, 5)
+
+--// ================================================================
+--// MAIN GUI
+--// ================================================================
+
+local Gui = Instance.new("ScreenGui")
+Gui.Name = "KronosChatV1Simulation"
+Gui.IgnoreGuiInset = true
+Gui.ResetOnSpawn = false
+Gui.Enabled = false
+Gui.Parent = PlayerGui
+
+local Main = Instance.new("Frame")
+Main.Name = "MainFrame"
+Main.Size = UDim2.fromOffset(450, 320)
+Main.Position = UDim2.new(0.02, 0, 0.55, 0)
+Main.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
+Main.BackgroundTransparency = 0.25
+Main.BorderSizePixel = 0
+Main.Parent = Gui
+corner(Main, 16)
+
+local MainStroke = stroke(Main, 2.5, Color3.fromRGB(255, 0, 0), 0.15)
+
+local BorderGradient = Instance.new("UIGradient")
+BorderGradient.Color = ColorSequence.new({
+    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 45, 45)),
+    ColorSequenceKeypoint.new(0.5, Color3.fromRGB(45, 45, 60)),
+    ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 45, 45)),
+})
+BorderGradient.Parent = MainStroke
+
+RunService.RenderStepped:Connect(function(dt)
+    if MainStroke.Parent then
+        BorderGradient.Rotation = (BorderGradient.Rotation + 35 * dt) % 360
+    end
+end)
+
+--// Header
+local Header = Instance.new("Frame")
+Header.Size = UDim2.new(1, 0, 0, 36)
+Header.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+Header.BackgroundTransparency = 0.15
+Header.BorderSizePixel = 0
+Header.Parent = Main
+corner(Header, 16)
+
+local HeaderTitle = label(
+    Header,
+    "KRONOS CHAT",
+    UDim2.new(0, 120, 1, 0),
+    UDim2.fromOffset(8, 0),
+    11,
+    Color3.fromRGB(255, 255, 255)
+)
+HeaderTitle.Font = Enum.Font.GothamBold
+
+--// Main window dragging
+local MainDragging = false
+local MainDragStart
+local MainStartPosition
+
+local function BeginMainDrag(input)
+    MainDragging = true
+    MainDragStart = input.Position
+    MainStartPosition = Main.Position
+
+    input.Changed:Connect(function()
+        if input.UserInputState == Enum.UserInputState.End then
+            MainDragging = false
+        end
+    end)
+end
+
+Header.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        BeginMainDrag(input)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not MainDragging then return end
+
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        local delta = input.Position - MainDragStart
+
+        Main.Position = UDim2.new(
+            MainStartPosition.X.Scale,
+            MainStartPosition.X.Offset + delta.X,
+            MainStartPosition.Y.Scale,
+            MainStartPosition.Y.Offset + delta.Y
+        )
+    end
+end)
+
+--// Header hide button
+local HideButton = button(
+    Header,
+    "×",
+    UDim2.fromOffset(25, 25),
+    UDim2.new(1, -31, 0, 5)
+)
+HideButton.TextSize = 18
+HideButton.BackgroundColor3 = Color3.fromRGB(110, 20, 25)
+HideButton.MouseButton1Click:Connect(function()
+    Main.Visible = false
+end)
+
+--// Tabs
+local Tabs = {
+    {"GLOBAL", 70},
+    {"SERVER", 70},
+    {"PROFILE", 70},
+    {"ABOUT", 65},
+    {"STICKERS", 78},
+}
+
+local TabButtons = {}
+local ActiveTab = "GLOBAL"
+
+for i, data in ipairs(Tabs) do
+    local name, width = data[1], data[2]
+    local x = 132
+    for j = 1, i - 1 do
+        x += Tabs[j][2] + 4
+    end
+
+    local b = button(Header, name, UDim2.fromOffset(width, 26), UDim2.fromOffset(x, 5))
+    b.BackgroundColor3 = name == "GLOBAL" and Color3.fromRGB(200, 30, 30) or Color3.fromRGB(35, 35, 45)
+    TabButtons[name] = b
+end
+
+--// Content containers
+local Content = Instance.new("Frame")
+Content.Size = UDim2.new(1, -16, 1, -90)
+Content.Position = UDim2.fromOffset(8, 40)
+Content.BackgroundTransparency = 1
+Content.Parent = Main
+
+local MessageScroll = Instance.new("ScrollingFrame")
+MessageScroll.Size = UDim2.fromScale(1, 1)
+MessageScroll.BackgroundTransparency = 1
+MessageScroll.BorderSizePixel = 0
+MessageScroll.ScrollBarThickness = 4
+MessageScroll.ScrollBarImageColor3 = Color3.fromRGB(255, 0, 0)
+MessageScroll.CanvasSize = UDim2.new()
+MessageScroll.Parent = Content
+
+local MessageLayout = Instance.new("UIListLayout")
+MessageLayout.Padding = UDim.new(0, 6)
+MessageLayout.SortOrder = Enum.SortOrder.LayoutOrder
+MessageLayout.Parent = MessageScroll
+
+MessageLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+    MessageScroll.CanvasSize = UDim2.fromOffset(0, MessageLayout.AbsoluteContentSize.Y + 12)
+    MessageScroll.CanvasPosition = Vector2.new(0, math.max(0, MessageScroll.CanvasSize.Y.Offset))
+end)
+
+local AboutPanel = Instance.new("ScrollingFrame")
+AboutPanel.Size = UDim2.fromScale(1, 1)
+AboutPanel.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+AboutPanel.BackgroundTransparency = 0.25
+AboutPanel.BorderSizePixel = 0
+AboutPanel.ScrollBarThickness = 3
+AboutPanel.Visible = false
+AboutPanel.Parent = Content
+corner(AboutPanel, 9)
+
+
+local ProfilePanel = Instance.new("Frame")
+ProfilePanel.Name = "ProfilePanel"
+ProfilePanel.Size = UDim2.fromScale(1, 1)
+ProfilePanel.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+ProfilePanel.BackgroundTransparency = 0.25
+ProfilePanel.BorderSizePixel = 0
+ProfilePanel.Visible = false
+ProfilePanel.Parent = Content
+corner(ProfilePanel, 9)
+stroke(ProfilePanel, 1.2, Color3.fromRGB(255, 0, 0), 0.35)
+
+local ProfileTitle = label(
+    ProfilePanel,
+    "PROFILE",
+    UDim2.new(1, -24, 0, 30),
+    UDim2.fromOffset(12, 10),
+    16,
+    Color3.fromRGB(255, 255, 255)
+)
+ProfileTitle.Font = Enum.Font.GothamBold
+
+local ProfileName = label(
+    ProfilePanel,
+    "Display Name: " .. LocalPlayer.DisplayName,
+    UDim2.new(1, -24, 0, 24),
+    UDim2.fromOffset(12, 50),
+    12,
+    Color3.fromRGB(235, 235, 240)
+)
+
+local ProfileUser = label(
+    ProfilePanel,
+    "Username: @" .. LocalPlayer.Name,
+    UDim2.new(1, -24, 0, 24),
+    UDim2.fromOffset(12, 76),
+    11,
+    Color3.fromRGB(165, 165, 180)
+)
+
+local ProfileStatus = label(
+    ProfilePanel,
+    "Status: Kronos Chat V1 simulation",
+    UDim2.new(1, -24, 0, 24),
+    UDim2.fromOffset(12, 105),
+    11,
+    Color3.fromRGB(0, 255, 150)
+)
+
+local AboutText = label(
+    AboutPanel,
+    [[KRONOS CHAT — V1 SIMULATION
+
+A lightweight recreation of the original Kronos Chat interface.
+
+[ FEATURES ]
+• Global / Server chat layout
+• Custom tags and colored name styles
+• Sticker panel
+• About / information panel
+• Long-press message option simulation
+• Compact floating toggle
+• Animated red / black interface
+
+[ DEMO NOTE ]
+This V1 copy is visual-only. It does not send real
+messages or access the original Firebase / role systems.
+
+[ COMMAND EXAMPLES ]
+!tag
+!tag [RoleName]
+!spoof [NewName]
+/w [User] [Message]
+
+Architect: Kabir_Priv]],
+    UDim2.new(1, -18, 0, 0),
+    UDim2.fromOffset(9, 9),
+    11,
+    Color3.fromRGB(220, 220, 230)
+)
+AboutText.TextWrapped = true
+AboutText.TextYAlignment = Enum.TextYAlignment.Top
+AboutText.AutomaticSize = Enum.AutomaticSize.Y
+AboutPanel.CanvasSize = UDim2.new(0, 0, 0, 300)
+
+local StickerPanel = Instance.new("ScrollingFrame")
+StickerPanel.Name = "StickerPanel"
+StickerPanel.Size = UDim2.new(1, 0, 0, 150)
+StickerPanel.Position = UDim2.new(0, 0, 1, -152)
+StickerPanel.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
+StickerPanel.BackgroundTransparency = 0.05
+StickerPanel.BorderSizePixel = 0
+StickerPanel.ScrollBarThickness = 3
+StickerPanel.Visible = false
+StickerPanel.ZIndex = 20
+StickerPanel.Parent = Main
+corner(StickerPanel, 10)
+stroke(StickerPanel, 1.5, Color3.fromRGB(255, 0, 0), 0.35)
+
+local StickerGrid = Instance.new("UIGridLayout")
+StickerGrid.CellSize = UDim2.fromOffset(48, 48)
+StickerGrid.CellPadding = UDim2.fromOffset(5, 5)
+StickerGrid.Parent = StickerPanel
+
+local DemoStickers = {
+    "😁","😀","😂","🤣","😎","🤩","🥶","😭",
+    "😈","👑","🔥","💀","❤️","💯","🤝","🗿",
+    "😏","🤔","😮","😴","🥰","😡","🤡","👀",
+}
+
+for _, emoji in ipairs(DemoStickers) do
+    local b = button(StickerPanel, emoji, UDim2.fromOffset(48, 48), UDim2.new())
+    b.ZIndex = 21
+    b.TextSize = 22
+    b.MouseButton1Click:Connect(function()
+        local current = MessageInput.Text
+        MessageInput.Text = current .. emoji
+        StickerPanel.Visible = false
+    end)
+end
+
+--// ================================================================
+--// DEMO MESSAGE BUILDER
+--// ================================================================
+
+local DemoMessages = {
+    {name = "Kabir_Priv", tag = "ARCHITECT", text = "Welcome to the Kronos Chat V1 simulation.", mine = false},
+    {name = "Xenox", tag = "VIP", text = "This is what the old-style interface looks like.", mine = false},
+    {name = LocalPlayer.DisplayName, tag = "USER", text = "Testing the simulated GUI.", mine = true},
+    {name = "Kronos", tag = "SYSTEM", text = "Long-press a message to open its demo options.", mine = false},
+}
+
+local function ClearMessages()
+    for _, child in ipairs(MessageScroll:GetChildren()) do
+        if child:IsA("Frame") then
+            child:Destroy()
+        end
+    end
+end
+
+local function ShowMessageOptions(messageFrame, messageData)
+    local old = Main:FindFirstChild("MessageOptions")
+    if old then old:Destroy() end
+
+    local popup = Instance.new("Frame")
+    popup.Name = "MessageOptions"
+    popup.Size = UDim2.fromOffset(190, 112)
+    popup.Position = UDim2.new(0, 18, 0, 88)
+    popup.BackgroundColor3 = Color3.fromRGB(18, 18, 27)
+    popup.BackgroundTransparency = 0.02
+    popup.BorderSizePixel = 0
+    popup.ZIndex = 100
+    popup.Parent = Main
+    corner(popup, 10)
+    stroke(popup, 1.5, Color3.fromRGB(255, 0, 0), 0.25)
+
+    label(popup, "MESSAGE OPTIONS", UDim2.new(1, -16, 0, 20),
+        UDim2.fromOffset(8, 5), 9, Color3.fromRGB(255, 70, 70)).ZIndex = 101
+
+    local options = {"Copy", "Reply", "Private Message", "Close"}
+
+    for i, option in ipairs(options) do
+        local b = button(popup, option, UDim2.new(1, -16, 0, 20),
+            UDim2.fromOffset(8, 26 + (i - 1) * 21))
+        b.ZIndex = 101
+
+        b.MouseButton1Click:Connect(function()
+            if option == "Close" then
+                popup:Destroy()
+            elseif option == "Copy" then
+                if setclipboard then
+                    pcall(setclipboard, messageData.text)
+                end
+                b.Text = "Copied!"
+                task.delay(0.7, function()
+                    if b.Parent then b.Text = option end
+                end)
+            elseif option == "Reply" then
+                MessageInput.Text = "@" .. messageData.name .. " "
+                MessageInput:CaptureFocus()
+                popup:Destroy()
+            elseif option == "Private Message" then
+                MessageInput.Text = "/w " .. messageData.name .. " "
+                MessageInput:CaptureFocus()
+                popup:Destroy()
+            end
+        end)
+    end
+end
+
+local function AddMessage(data)
+    local frame = Instance.new("Frame")
+    frame.Size = UDim2.new(1, -4, 0, 52)
+    frame.BackgroundColor3 = data.mine and Color3.fromRGB(40, 20, 22) or Color3.fromRGB(20, 20, 29)
+    frame.BackgroundTransparency = 0.15
+    frame.BorderSizePixel = 0
+    frame.Parent = MessageScroll
+    corner(frame, 9)
+
+    local tag = label(
+        frame,
+        "[" .. data.tag .. "]",
+        UDim2.fromOffset(72, 18),
+        UDim2.fromOffset(8, 5),
+        8,
+        data.tag == "ARCHITECT" and Color3.fromRGB(255, 40, 40) or Color3.fromRGB(255, 190, 70)
+    )
+    tag.Font = Enum.Font.GothamBold
+
+    local name = label(
+        frame,
+        data.name,
+        UDim2.new(1, -90, 0, 18),
+        UDim2.fromOffset(82, 5),
+        10,
+        Color3.fromRGB(245, 245, 250)
+    )
+    name.Font = Enum.Font.GothamBold
+
+    local text = label(
+        frame,
+        data.text,
+        UDim2.new(1, -16, 0, 23),
+        UDim2.fromOffset(8, 24),
+        11,
+        Color3.fromRGB(205, 205, 215)
+    )
+
+    local clickTarget = Instance.new("TextButton")
+    clickTarget.Size = UDim2.fromScale(1, 1)
+    clickTarget.BackgroundTransparency = 1
+    clickTarget.Text = ""
+    clickTarget.ZIndex = 10
+    clickTarget.Parent = frame
+
+    local pressStart = 0
+    clickTarget.MouseButton1Down:Connect(function()
+        pressStart = os.clock()
+        task.delay(0.55, function()
+            if os.clock() - pressStart >= 0.55 and clickTarget.Parent then
+                ShowMessageOptions(frame, data)
+            end
+        end)
+    end)
+
+    clickTarget.MouseButton1Up:Connect(function()
+        pressStart = 0
+    end)
+end
+
+local function RefreshMessages()
+    ClearMessages()
+
+    if ActiveTab == "GLOBAL" then
+        for _, message in ipairs(DemoMessages) do
+            AddMessage(message)
+        end
+    elseif ActiveTab == "SERVER" then
+        AddMessage({name = "Server", tag = "SYSTEM", text = "Server chat simulation.", mine = false})
+        AddMessage({name = LocalPlayer.DisplayName, tag = "USER", text = "Only server-style demo messages appear here.", mine = true})
+    elseif ActiveTab == "STICKERS" then
+        AddMessage({name = "Kronos", tag = "STICKER", text = "Open the sticker picker below the input bar.", mine = false})
+    elseif ActiveTab == "PROFILE" then
+        -- Profile is represented by ProfilePanel.
+    end
+end
+
+--// ================================================================
+--// INPUT BAR
+--// ================================================================
+
+local InputBar = Instance.new("Frame")
+InputBar.Size = UDim2.new(1, -16, 0, 38)
+InputBar.Position = UDim2.new(0, 8, 1, -44)
+InputBar.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+InputBar.BackgroundTransparency = 0.15
+InputBar.BorderSizePixel = 0
+InputBar.Parent = Main
+corner(InputBar, 12)
+
+local MessageInput = Instance.new("TextBox")
+MessageInput.Name = "MessageInput"
+MessageInput.Size = UDim2.new(1, -95, 1, -8)
+MessageInput.Position = UDim2.fromOffset(10, 4)
+MessageInput.BackgroundTransparency = 1
+MessageInput.Font = Enum.Font.GothamMedium
+MessageInput.PlaceholderText = "Type a message..."
+MessageInput.PlaceholderColor3 = Color3.fromRGB(140, 140, 150)
+MessageInput.Text = ""
+MessageInput.TextColor3 = Color3.fromRGB(240, 240, 245)
+MessageInput.TextSize = 12
+MessageInput.ClearTextOnFocus = false
+MessageInput.Parent = InputBar
+
+local StickerButton = button(InputBar, "😁", UDim2.fromOffset(34, 30), UDim2.new(1, -80, 0, 4))
+StickerButton.TextSize = 15
+StickerButton.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
+StickerButton.MouseButton1Click:Connect(function()
+    StickerPanel.Visible = not StickerPanel.Visible
+end)
+
+local SendButton = button(InputBar, "SEND", UDim2.fromOffset(40, 30), UDim2.new(1, -44, 0, 4))
+SendButton.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
+
+local function SendDemoMessage()
+    local text = MessageInput.Text
+    if text == "" then return end
+
+    AddMessage({
+        name = LocalPlayer.DisplayName,
+        tag = "USER",
+        text = text,
+        mine = true
+    })
+
+    MessageInput.Text = ""
+end
+
+SendButton.MouseButton1Click:Connect(SendDemoMessage)
+
+MessageInput.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        SendDemoMessage()
+    end
+end)
+
+--// ================================================================
+--// TAB SWITCHING
+--// ================================================================
+
+local function SetTab(tabName)
+    ActiveTab = tabName
+
+    InputBar.Visible = (tabName == "GLOBAL" or tabName == "SERVER" or tabName == "STICKERS")
+    for name, b in pairs(TabButtons) do
+        b.BackgroundColor3 =
+            name == tabName
+            and Color3.fromRGB(200, 30, 30)
+            or Color3.fromRGB(35, 35, 45)
+    end
+
+    MessageScroll.Visible = tabName ~= "ABOUT"
+    AboutPanel.Visible = tabName == "ABOUT"
+    ProfilePanel.Visible = tabName == "PROFILE"
+
+    if tabName == "STICKERS" then
+        StickerPanel.Visible = true
+    elseif tabName ~= "STICKERS" then
+        StickerPanel.Visible = false
+    end
+
+    RefreshMessages()
+end
+
+for name, b in pairs(TabButtons) do
+    b.MouseButton1Click:Connect(function()
+        SetTab(name)
+    end)
+end
+
+--// ================================================================
+--// FLOATING TOGGLE
+--// ================================================================
+
+local Toggle = button(Gui, "乂 K 乂", UDim2.fromOffset(72, 34), UDim2.new(0.02, 0, 0.5, 0))
+Toggle.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
+Toggle.BackgroundTransparency = 0.12
+Toggle.TextSize = 12
+stroke(Toggle, 2.2, Color3.fromRGB(255, 0, 0), 0)
+
+Toggle.MouseButton1Click:Connect(function()
+    Main.Visible = not Main.Visible
+end)
+
+--// Make the toggle draggable
+local dragging = false
+local dragStart
+local startPos
+
+Toggle.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = Toggle.Position
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if not dragging then return end
+
+    if input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        local delta = input.Position - dragStart
+
+        Toggle.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+--// ================================================================
+--// STARTUP
+--// ================================================================
+
+RefreshMessages()
+
+task.spawn(function()
+    local duration = 1.8
+    local elapsed = 0
+
+    while elapsed < duration do
+        local dt = task.wait()
+        elapsed += dt
+
+        local p = math.clamp(elapsed / duration, 0, 1)
+        LoadFill.Size = UDim2.new(p, 0, 1, 0)
+
+        if p < 0.35 then
+            IntroStatus.Text = "> Building V1 interface..."
+        elseif p < 0.7 then
+            IntroStatus.Text = "> Loading simulated chat..."
+        else
+            IntroStatus.Text = "> All systems ready!"
+        end
+    end
+
+    task.wait(0.25)
+
+    local fade = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+    TweenService:Create(IntroBG, fade, {
+        BackgroundTransparency = 1
+    }):Play()
+
+    TweenService:Create(IntroCard, fade, {
+        BackgroundTransparency = 1
+    }):Play()
+
+    for _, obj in ipairs(IntroCard:GetDescendants()) do
+        if obj:IsA("TextLabel") then
+            TweenService:Create(obj, fade, {TextTransparency = 1}):Play()
+        elseif obj:IsA("UIStroke") then
+            TweenService:Create(obj, fade, {Transparency = 1}):Play()
+        elseif obj:IsA("Frame") then
+            TweenService:Create(obj, fade, {BackgroundTransparency = 1}):Play()
+        end
+    end
+
+    task.wait(0.4)
+    Intro:Destroy()
+    Gui.Enabled = true
+end)
