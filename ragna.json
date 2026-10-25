@@ -502,16 +502,17 @@ end)();
 (function()if not V.REQUEST then return end
 local SoundService=game:GetService("SoundService")local UserInputService=game:GetService("UserInputService")local MUSIC_DIR=CACHE.."/music"local NODE="/servers/"..enc(JOB).."/music"local PREF_FILE=CACHE.."/music_pref_"..ME..".json"local LONG_SECONDS=CONFIG.MUSIC_LONG_SECONDS or 300
 local DL_KEYS=CONFIG.MUSIC_DL_KEYS or{}local YT_KEY=CONFIG.MUSIC_YT_KEY or""local MIN_BYTES=2048
-local ORANGE=Color3.fromRGB(255,170,100)local M={gen=0,sound=nil,state=nil,cur=nil,volume=.8,muted=false,key=1,status="",warn="",pct=nil,loop=false,pending=0,lastWrite=0,hinted=false,}ensureFolder(MUSIC_DIR)pcall(function()if isfile and readfile and isfile(PREF_FILE)then
+local ORANGE=Color3.fromRGB(255,170,100)local M={gen=0,sound=nil,state=nil,cur=nil,volume=.8,muted=false,key=1,status="",warn="",pct=nil,loop=false,pending=0,lastWrite=0,hinted=false,autoplay=true,}ensureFolder(MUSIC_DIR)pcall(function()if isfile and readfile and isfile(PREF_FILE)then
 local d=HttpService:JSONDecode(readfile(PREF_FILE))if type(d)=="table"then
 if type(d.volume)=="number"then M.volume=math.clamp(d.volume,0,1)end
 M.muted=d.muted==true
+if d.autoplay==false then M.autoplay=false end
 if type(d.ytKey)=="string"and#d.ytKey>=30 and#d.ytKey<=60 and d.ytKey:match("^[%w_%-]+$")then M.userKey=d.ytKey
 YT_KEY=d.ytKey
 end
 end
 end
-end)local function savePrefs()pcall(function()if writefile then writefile(PREF_FILE,HttpService:JSONEncode({volume=M.volume,muted=M.muted,ytKey=M.userKey}))end
+end)local function savePrefs()pcall(function()if writefile then writefile(PREF_FILE,HttpService:JSONEncode({volume=M.volume,muted=M.muted,ytKey=M.userKey,autoplay=M.autoplay}))end
 end)end
 local function fsOk()return type(isfile)=="function"and type(readfile)=="function"and type(writefile)=="function"and(type(getcustomasset)=="function"or type(getsynasset)=="function")end
 local function pathOf(id)return MUSIC_DIR.."/"..id..".mp3"end
@@ -853,6 +854,7 @@ modPlay(q.items[i])M.q=q
 end
 local function nextQ()local q=M.q
 if not q then return end
+if not M.autoplay then q.skip=nil return end
 local st=M.state
 local over=false
 if q.skip and not st then
@@ -873,6 +875,97 @@ if not isMe()or not q or not q.items[q.i+d]then return end
 playQ(q,q.i+d)end
 local panel
 local P={}local nextToken
+local LIB_URL="https://raw.githubusercontent.com/thedevilondiscord/KabirKiScripts/main/instaMusicX.json"
+local LIB_FILE=CACHE.."/music_library.json"
+local LIB_TS=CACHE.."/music_library_t.txt"
+local LIB_TTL=6*3600
+local GENRE_ORDER={"Indi","Punjabi","Phonk","Angelcore","English"}
+local Lib={genres={},flat={},total=0,skipped=0,state="idle",loading=false,err=nil}
+local function parseLib(raw)
+local d=jsonOf(raw)
+if not d or type(d.categories)~="table"then return nil,"the library file isn't valid JSON"end
+local keys,seen={},{}
+for _,want in ipairs(GENRE_ORDER)do
+for k in pairs(d.categories)do
+if tostring(k):lower()==want:lower()and not seen[k]then keys[#keys+1]=k;seen[k]=true end
+end
+end
+local rest={}
+for k in pairs(d.categories)do if not seen[k]then rest[#rest+1]=k end end
+table.sort(rest,function(a,b)return tostring(a)<tostring(b)end)
+for _,k in ipairs(rest)do keys[#keys+1]=k end
+local genres,flat,total,skipped={},{},0,0
+for _,k in ipairs(keys)do
+local arr=d.categories[k]
+if type(arr)=="table"then
+local songs,dup={},{}
+for _,it in ipairs(arr)do
+local id=type(it)=="table"and type(it.url)=="string"and extractId(it.url)or nil
+local nm=type(it)=="table"and type(it.name)=="string"and trimS(it.name)or nil
+if id and validId(id)and nm and nm~=""and not dup[id]then
+dup[id]=true
+local s={id=id,title=cut(clean(nm),80),len=0,channel=tostring(k),genre=tostring(k),low=nm:lower()}
+songs[#songs+1]=s
+flat[#flat+1]=s
+else
+skipped=skipped+1
+end
+end
+if#songs>0 then genres[#genres+1]={name=tostring(k),songs=songs};total=total+#songs end
+end
+end
+if total==0 then return nil,"no playable songs were found in the library file"end
+return{genres=genres,flat=flat,total=total,skipped=skipped}
+end
+local function loadLib(force)
+if Lib.loading then return end
+Lib.loading=true
+if Lib.onChange then pcall(Lib.onChange)end
+task.spawn(function()
+local raw,fresh,cached
+local t=0
+pcall(function()if isfile(LIB_TS)then t=tonumber(readfile(LIB_TS))or 0 end end)
+pcall(function()if isfile(LIB_FILE)then cached=readfile(LIB_FILE)end end)
+if cached and not force and os.time()-t<LIB_TTL then raw=cached end
+if not raw then
+local body=getBody(LIB_URL)
+if body and#body>200 then raw=body;fresh=true end
+end
+if not raw and cached then raw=cached end
+local lib,err
+if raw then lib,err=parseLib(raw)else err="couldn't download the song library"end
+if not lib and fresh and cached then lib,err=parseLib(cached);fresh=false end
+Lib.loading=false
+if not V.alive then return end
+if lib then
+Lib.genres,Lib.flat,Lib.total,Lib.skipped=lib.genres,lib.flat,lib.total,lib.skipped
+Lib.state="ready"
+Lib.err=nil
+if fresh then pcall(function()if writefile then writefile(LIB_FILE,raw);writefile(LIB_TS,tostring(os.time()))end end)end
+elseif Lib.state~="ready"then
+Lib.state="error"
+Lib.err=err
+end
+if Lib.onChange then pcall(Lib.onChange)end
+end)
+end
+local function searchLib(q)
+q=q:lower()
+local tokens={}
+for w in q:gmatch("%S+")do tokens[#tokens+1]=w end
+if#tokens==0 then return{},0 end
+local out={}
+for _,s in ipairs(Lib.flat)do
+local ok=true
+for _,w in ipairs(tokens)do if not s.low:find(w,1,true)then ok=false;break end end
+if ok then out[#out+1]={s=s,sc=s.low:find(q,1,true)and 1 or 2,i=#out+1}end
+end
+table.sort(out,function(a,b)if a.sc~=b.sc then return a.sc<b.sc end return a.i<b.i end)
+local res={}
+for i=1,math.min(#out,60)do res[i]=out[i].s end
+return res,#out
+end
+local applyVis,renderGenres,openGenre,closeGenre,renderGenreSongs,doSearch
 local lastQuery=""local searching=false
 local MIDX=T.hiddenTab or 6
 local backTab=1
@@ -898,11 +991,12 @@ end
 for _,v in ipairs(items)do
 P.count+=1
 addCard(v,P.count)end
-P.more.Visible=nextToken~=nil
+P.mS=nextToken and{text="Load more",fn=function()doSearch(lastQuery,nextToken,true)end}or nil
+if applyVis then applyVis()end
 end
 local playPlaylist
 local removePlaylist
-local function addPlCard(pl,order)local card=new("Frame",{Name="PCard",Size=U2n(1,-4,0,48),BackgroundColor3=WHITE,BackgroundTransparency=.92,LayoutOrder=order,Visible=P.pl==true,ZIndex=62,Parent=P.list},{corner(10)})new("TextLabel",{Position=U2o(10,4),Size=U2n(1,-110,1,-8),BackgroundTransparency=1,Text=pl.name,Font=T.fontB,TextSize=12,TextColor3=T.text,TextXAlignment=XAL,TextWrapped=true,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=63,Parent=card})local btn=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,-36,.5,0),Size=U2o(56,30),BackgroundColor3=T.accA,BackgroundTransparency=.15,Text="PLAY",Font=T.fontB,TextSize=12,TextColor3=WHITE,AutoButtonColor=false,ZIndex=63,Parent=card},{corner(15)})local del=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,-6,.5,0),Size=U2o(26,30),BackgroundTransparency=1,Text="×",Font=T.fontB,TextSize=20,TextColor3=T.mut,AutoButtonColor=false,ZIndex=63,Parent=card})btn.Activated:Connect(function()playPlaylist(pl)end)del.Activated:Connect(function()removePlaylist(pl)end)end
+local function addPlCard(pl,order)local card=new("Frame",{Name="PCard",Size=U2n(1,-4,0,48),BackgroundColor3=WHITE,BackgroundTransparency=.92,LayoutOrder=order,Visible=(P.pl==true and not P.gen),ZIndex=62,Parent=P.list},{corner(10)})new("TextLabel",{Position=U2o(10,4),Size=U2n(1,-110,1,-8),BackgroundTransparency=1,Text=pl.name,Font=T.fontB,TextSize=12,TextColor3=T.text,TextXAlignment=XAL,TextWrapped=true,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=63,Parent=card})local btn=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,-36,.5,0),Size=U2o(56,30),BackgroundColor3=T.accA,BackgroundTransparency=.15,Text="PLAY",Font=T.fontB,TextSize=12,TextColor3=WHITE,AutoButtonColor=false,ZIndex=63,Parent=card},{corner(15)})local del=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,-6,.5,0),Size=U2o(26,30),BackgroundTransparency=1,Text="×",Font=T.fontB,TextSize=20,TextColor3=T.mut,AutoButtonColor=false,ZIndex=63,Parent=card})btn.Activated:Connect(function()playPlaylist(pl)end)del.Activated:Connect(function()removePlaylist(pl)end)end
 local function renderPl()if not P.list then return end
 for _,c in ipairs(P.list:GetChildren())do
 if c.Name=="PCard"then c:Destroy()end
@@ -998,9 +1092,121 @@ P.pendT=cut(clean(d.title),80)
 if trimS(box.Text)==""then box.Text=cut(clean(d.title),40)setStatus("Got the link! The name box has the song's title. Change it to any name you like, then press Save.")end
 end
 end)end
-local function doSearch(query,token)query=trimS(query)if searching or not panel or query==""then return end
+local ORANGE_=ORANGE
+local LIBPAGE=40
+local function genreByName(n)for _,g in ipairs(Lib.genres)do if g.name==n then return g end end return nil end
+local function shuffled(songs)
+local t={}
+for i,s in ipairs(songs)do t[i]=s end
+for i=#t,2,-1 do local j=math.random(i);t[i],t[j]=t[j],t[i]end
+return t
+end
+local function playGenre(g,shuffle)
+if not isMe()then return end
+playQ({items=shuffle and shuffled(g.songs)or g.songs,i=1,name=g.name},1)
+setStatus("Playing "..g.name..(shuffle and" (shuffled)"or"")..(M.autoplay and"."or". Autoplay is off, so it stops after each song."))
+end
+applyVis=function()
+if not P.list then return end
+for _,c in ipairs(P.list:GetChildren())do
+local n=c.Name
+if n=="Card"then c.Visible=not P.pl and not P.sv
+elseif n=="SCard"then c.Visible=P.sv==true
+elseif n=="PCard"or n=="GCard"then c.Visible=(P.pl==true and not P.gen)
+elseif n=="LCard"or n=="LHead"then c.Visible=(P.pl==true and P.gen~=nil)end
+end
+local m
+if P.pl then m=P.gen and P.mG or nil elseif not P.sv then m=P.mS end
+if m then P.more.Text=m.text;P.moreFn=m.fn;P.more.Visible=true else P.more.Visible=false end
+end
+renderGenres=function()
+if not P.list then return end
+for _,c in ipairs(P.list:GetChildren())do if c.Name=="GCard"then c:Destroy()end end
+local txt
+if Lib.loading then txt="Updating the music library..."
+elseif Lib.state=="ready"then txt="Music library  ·  "..Lib.total.." songs"..(Lib.skipped>0 and("  ("..Lib.skipped.." skipped)")or"")
+elseif Lib.state=="error"then txt="Music library unavailable"
+else txt="Loading the music library..."end
+local head=new("Frame",{Name="GCard",Size=U2n(1,-4,0,24),BackgroundTransparency=1,LayoutOrder=-1100,Visible=false,Parent=P.list})
+new("TextLabel",{Size=U2n(1,-70,1,0),BackgroundTransparency=1,Text=txt,Font=T.fontB,TextSize=11,TextColor3=T.mut,TextXAlignment=XAL,TextTruncate=Enum.TextTruncate.AtEnd,Parent=head})
+local rb=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,0,.5,0),Size=U2o(64,22),BackgroundColor3=WHITE,BackgroundTransparency=.88,Text="Refresh",Font=T.fontB,TextSize=11,TextColor3=T.text,AutoButtonColor=false,Parent=head},{corner(11)})
+rb.Activated:Connect(function()loadLib(true)end)
+if Lib.state=="error"and#Lib.genres==0 then
+new("TextLabel",{Name="GCard",Size=U2n(1,-4,0,44),BackgroundTransparency=1,LayoutOrder=-999,Visible=false,TextWrapped=true,Text=tostring(Lib.err or"Couldn't load it")..". Check your connection and press Refresh.",Font=T.font,TextSize=11,TextColor3=ORANGE_,TextXAlignment=XAL,TextYAlignment=Enum.TextYAlignment.Top,Parent=P.list})
+end
+for i,g in ipairs(Lib.genres)do
+local card=new("Frame",{Name="GCard",Size=U2n(1,-4,0,52),BackgroundColor3=WHITE,BackgroundTransparency=.88,LayoutOrder=i-1000,Visible=false,Parent=P.list},{corner(10),stroke(.85)})
+new("TextLabel",{Position=U2o(10,6),Size=U2n(1,-130,0,20),BackgroundTransparency=1,Text=g.name,Font=T.fontB,TextSize=14,TextColor3=T.text,TextXAlignment=XAL,TextTruncate=Enum.TextTruncate.AtEnd,Parent=card})
+new("TextLabel",{Position=U2o(10,28),Size=U2n(1,-130,0,16),BackgroundTransparency=1,Text=#g.songs.." songs",Font=T.font,TextSize=11,TextColor3=T.mut,TextXAlignment=XAL,Parent=card})
+local open=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,-62,.5,0),Size=U2o(52,30),BackgroundColor3=WHITE,BackgroundTransparency=.86,Text="Open",Font=T.fontB,TextSize=12,TextColor3=T.text,AutoButtonColor=false,Parent=card},{corner(15)})
+local play=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,-8,.5,0),Size=U2o(48,30),BackgroundColor3=T.accA,BackgroundTransparency=.15,Text="PLAY",Font=T.fontB,TextSize=12,TextColor3=WHITE,AutoButtonColor=false,Parent=card},{corner(15)})
+open.Activated:Connect(function()openGenre(g.name)end)
+play.Activated:Connect(function()playGenre(g,false)end)
+end
+applyVis()
+end
+local function addLibCard(g,idx)
+local s=g.songs[idx]
+local card=new("Frame",{Name="LCard",Size=U2n(1,-4,0,50),BackgroundColor3=WHITE,BackgroundTransparency=.92,LayoutOrder=idx,Visible=(P.pl==true and P.gen~=nil),Parent=P.list},{corner(10)})
+new("TextLabel",{Position=U2o(10,4),Size=U2n(1,-78,0,42),BackgroundTransparency=1,Text=idx..".  "..s.title,Font=T.fontB,TextSize=12,TextColor3=T.text,TextXAlignment=XAL,TextYAlignment=Enum.TextYAlignment.Center,TextWrapped=true,TextTruncate=Enum.TextTruncate.AtEnd,Parent=card})
+local btn=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,-8,.5,0),Size=U2o(56,30),BackgroundColor3=T.accA,BackgroundTransparency=.15,Text="PLAY",Font=T.fontB,TextSize=12,TextColor3=WHITE,AutoButtonColor=false,Parent=card},{corner(15)})
+btn.Activated:Connect(function()
+if not isMe()then return end
+playQ({items=g.songs,i=idx,name=g.name},idx)
+end)
+end
+renderGenreSongs=function()
+local g=genreByName(P.gen)
+if not g then return end
+local from=(P.libShown or 0)+1
+local to=math.min(#g.songs,(P.libShown or 0)+LIBPAGE)
+for idx=from,to do addLibCard(g,idx)end
+P.libShown=to
+if to<#g.songs then
+P.mG={text="Load more songs ("..(#g.songs-to).." left)",fn=function()renderGenreSongs()end}
+else P.mG=nil end
+applyVis()
+end
+local function clearGenreCards()
+for _,c in ipairs(P.list:GetChildren())do if c.Name=="LHead"or c.Name=="LCard"then c:Destroy()end end
+end
+closeGenre=function()
+P.gen=nil;P.mG=nil;P.libShown=0
+clearGenreCards()
+applyVis()
+P.list.CanvasPosition=Vector2.new(0,0)
+end
+openGenre=function(name)
+local g=genreByName(name)
+if not g then return end
+clearGenreCards()
+P.gen=name;P.libShown=0;P.mG=nil
+local head=new("Frame",{Name="LHead",Size=U2n(1,-4,0,80),BackgroundColor3=WHITE,BackgroundTransparency=.9,LayoutOrder=-500,Visible=false,Parent=P.list},{corner(10)})
+local back=new("TextButton",{Position=U2o(6,6),Size=U2o(30,28),BackgroundColor3=WHITE,BackgroundTransparency=.88,Text="‹",Font=T.fontB,TextSize=20,TextColor3=T.text,AutoButtonColor=false,Parent=head},{corner(12)})
+back.Activated:Connect(closeGenre)
+new("TextLabel",{Position=U2o(44,6),Size=U2n(1,-50,0,28),BackgroundTransparency=1,Text=g.name.."  ·  "..#g.songs.." songs",Font=T.fontB,TextSize=14,TextColor3=T.text,TextXAlignment=XAL,TextTruncate=Enum.TextTruncate.AtEnd,Parent=head})
+local all=new("TextButton",{Position=U2o(6,42),Size=U2o(120,30),BackgroundColor3=T.accA,BackgroundTransparency=.15,Text="Play all",Font=T.fontB,TextSize=12,TextColor3=WHITE,AutoButtonColor=false,Parent=head},{corner(15)})
+local shuf=new("TextButton",{Position=U2o(132,42),Size=U2o(116,30),BackgroundColor3=WHITE,BackgroundTransparency=.86,Text="Shuffle",Font=T.fontB,TextSize=12,TextColor3=T.text,AutoButtonColor=false,Parent=head},{corner(15)})
+all.Activated:Connect(function()playGenre(g,false)end)
+shuf.Activated:Connect(function()playGenre(g,true)end)
+renderGenreSongs()
+P.list.CanvasPosition=Vector2.new(0,0)
+setStatus("Tap PLAY on any song to start there. Turn Auto off to play one song at a time.")
+end
+doSearch=function(query,token,forceYT)query=trimS(query)if searching or not panel or query==""then return end
 if not token and not extractId(query)and query:lower():find("youtube",1,true)and query:lower():find("list=",1,true)then
 setStatus("That is a playlist link. Tap \"Playlists\" at the top, paste it there and press Save.")return
+end
+if not token and not forceYT and not extractId(query)and Lib.state=="ready"then
+local res,n=searchLib(query)
+if#res>0 then
+lastQuery=query;nextToken=nil
+renderItems(res,false)
+P.mS={text="Search YouTube instead",fn=function()doSearch(query,nil,true)end}
+if applyVis then applyVis()end
+setStatus("Found "..n.." in the music library"..(n>#res and(" (showing the top "..#res..")")or"")..". Press PLAY.")
+return
+end
 end
 searching=true
 setStatus("Searching...")task.spawn(function()local items
@@ -1037,9 +1243,11 @@ text="Downloading "..M.pct.."%"ratio=M.pct/100
 elseif snd and snd.IsLoaded and snd.TimeLength>0 then
 text=fmtTime(snd.TimePosition).." / "..fmtTime(snd.TimeLength)ratio=math.clamp(snd.TimePosition/snd.TimeLength,0,1)elseif cur then
 text="Loading..."end
+if M.q and M.q.items[M.q.i]and text~=""then text=text.."  ·  "..M.q.i.."/"..#M.q.items end
 P.time.Text=text
 P.fill.Size=U2n(ratio,0,1,0)P.pause.Text=(st and st.state=="pause")and"Resume"or"Pause"P.loop.BackgroundColor3=M.loop and T.accA or WHITE
 P.loop.BackgroundTransparency=M.loop and .35 or .88
+if P.auto then P.auto.BackgroundColor3=M.autoplay and T.accA or WHITE;P.auto.BackgroundTransparency=M.autoplay and .35 or .88;P.auto.TextColor3=M.autoplay and WHITE or T.mut end
 if P.showV then P.showV(M.muted and 0 or M.volume)end
 local line=M.status
 if M.warn~=""then line=(line~=""and(line.."  ")or"")..M.warn end
@@ -1123,8 +1331,10 @@ local function cbtn(x,y,w,text)return new("TextButton",{Position=U2o(x,y),Size=U
 cbtn(10,180,45,"«").Activated:Connect(function()skipQ(-1)end)
 P.pause=cbtn(63,180,45,"Pause")
 cbtn(116,180,45,"»").Activated:Connect(function()skipQ(1)end)
-local stopBtn=cbtn(10,214,71,"Stop")
-P.loop=cbtn(90,214,71,"Loop")
+local stopBtn=cbtn(10,214,45,"Stop")
+P.loop=cbtn(63,214,45,"Loop")
+P.auto=cbtn(116,214,45,"Auto")
+P.auto.Activated:Connect(function()M.autoplay=not M.autoplay;savePrefs();setStatus(M.autoplay and"Autoplay is on: playlists continue to the next song."or"Autoplay is off: each song plays once and stops.")end)
 P.pause.Activated:Connect(modPause)
 stopBtn.Activated:Connect(modStop)
 P.loop.Activated:Connect(modLoop)
@@ -1158,14 +1368,9 @@ end
 go.Text=(P.pl or P.sv)and"Save"or"Search"
 box.PlaceholderText=P.pl and"Paste a playlist link to save"or(P.sv and"Paste a YouTube link to save"or"Paste YouTube link or search a song")
 box.Text=""
-for _,c in ipairs(P.list:GetChildren())do
-if c.Name=="Card"then c.Visible=not P.pl and not P.sv
-elseif c.Name=="PCard"then c.Visible=P.pl==true
-elseif c.Name=="SCard"then c.Visible=P.sv==true end
-end
-P.more.Visible=not P.pl and not P.sv and nextToken~=nil
+applyVis()
 if P.pl then
-setStatus(#pls==0 and"No saved playlists yet. Paste a YouTube playlist link above and press Save."or"Press PLAY to play a saved playlist for the server.")
+setStatus(P.gen and""or(#pls==0 and"Open a genre to browse songs, or paste a YouTube playlist link above and press Save to add your own."or"Open a genre to pick songs, or press PLAY on a saved playlist."))
 elseif P.sv then
 setStatus(#saved==0 and"Save your favorite songs here. Paste a YouTube video link above, press Save, then give it a name you like."or"Tap PLAY to play a saved song for the server. To save another, paste a link above and press Save.")
 else setStatus("")end
@@ -1174,7 +1379,7 @@ for i,def in ipairs({{"search","Search"},{"saved","Saved"},{"pl","Playlists"}})d
 modeBtns[def[1]]=new("TextButton",{Size=U2o(83,28),LayoutOrder=i,BackgroundColor3=WHITE,BackgroundTransparency=.9,Text=def[2],Font=T.fontB,TextSize=12,TextColor3=T.text,AutoButtonColor=false,Parent=modeRow},{corner(14)})
 modeBtns[def[1]].Activated:Connect(function()setMode(def[1])end)
 end
-P.more.Activated:Connect(function()doSearch(lastQuery,nextToken)end)
+P.more.Activated:Connect(function()if P.moreFn then P.moreFn()end end)
 local function submit()if P.sv then saveSong(box)
 elseif P.pl then savePlaylist(box.Text)
 else nextToken=nil;doSearch(box.Text)end
@@ -1184,6 +1389,9 @@ box.FocusLost:Connect(function(enter)if enter then submit()end end)
 renderPl()renderSv()
 setMode("search")
 refreshPanel()
+Lib.onChange=function()renderGenres()if P.gen and not genreByName(P.gen)then closeGenre()end if refreshPanel then refreshPanel()end end
+renderGenres()
+loadLib(false)
 end
 buildPage()
 local function openMusic()if not isMe()then return end
