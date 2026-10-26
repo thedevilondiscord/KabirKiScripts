@@ -1,6 +1,11 @@
 local S=...
 local V=S.V
 local CACHE,CONFIG,DM_FIREBASE_DB,FIREBASE_DB,FS,GITHUB_OWNER,HttpService,JOB,KICK_BAN,KICK_SPOOF,LP,ME=S.CACHE,S.CONFIG,S.DM_FIREBASE_DB,S.FIREBASE_DB,S.FS,S.GITHUB_OWNER,S.HttpService,S.JOB,S.KICK_BAN,S.KICK_SPOOF,S.LP,S.ME
+-- Plugin URL overrides: these are the new GitHub raw-file locations supplied by the user.
+-- Auras retains the existing configured location until its new URL is provided.
+CONFIG.PLUGIN_FILES = CONFIG.PLUGIN_FILES or {}
+CONFIG.PLUGIN_FILES.Rank = "https://raw.githubusercontent.com/thedevilondiscord/KabirKiScripts/main/scr234564345654"
+CONFIG.PLUGIN_FILES.Settings = "https://raw.githubusercontent.com/thedevilondiscord/KabirKiScripts/main/scs234565434543"
 local Players,SV,T,TweenService,U2n,U2o,U2s,WHITE,XAL,addEmpty,addHeader,auth=S.Players,S.SV,S.T,S.TweenService,S.U2n,S.U2o,S.U2s,S.WHITE,S.XAL,S.addEmpty,S.addHeader,S.auth
 local bind,cachedAsset,checkIdentity,clean,clearList,conns,container,corner,cut,dbRequest,discoverLegacy,dmAuth=S.bind,S.cachedAsset,S.checkIdentity,S.clean,S.clearList,S.conns,S.container,S.corner,S.cut,S.dbRequest,S.discoverLegacy,S.dmAuth
 local dmHandler,enc,ensureFolder,fitScale,flushAll,fsAuth,genv,grad,gui,home,isBanned,kick=S.dmHandler,S.enc,S.ensureFolder,S.fitScale,S.flushAll,S.fsAuth,S.genv,S.grad,S.gui,S.home,S.isBanned,S.kick
@@ -2145,7 +2150,7 @@ local function say(t)if msg then msg.Text=t end end
 if not loadstring then say(label.." needs loadstring, which this executor doesn't support.");return end
 if type(SRC)=="table"then
 local file=SRC.file
-local url=(CONFIG.PLUGIN_BASE or"")..file
+local url=type(file)=="string"and file:match("^https?://")and file or((CONFIG.PLUGIN_BASE or"")..file)
 local cachePath=CACHE.."/plugin_"..file
 local src,why
 for _=1,3 do
