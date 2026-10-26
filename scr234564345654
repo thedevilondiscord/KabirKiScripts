@@ -1,0 +1,703 @@
+-- Saiki Rechat plugin: Rank tab
+-- SOURCE file. Obfuscate it with Ker0 (like the main script), then upload the obfuscated result to GitHub as SaikiRechat_Rank.lua
+-- (folder = CONFIG.PLUGIN_BASE). The main script downloads it with game:HttpGet() and runs it with loadstring().
+local H = ... or (getgenv and getgenv() or _G).SaikiRechatPlugin
+-- Defensive startup: do not let this plugin initialize twice on the same Rechat instance.
+if type(H) ~= "table" or type(H.T) ~= "table" or type(H.onDestroy) ~= "function" then
+	warn("[SAIKI RECHAT] Rank plugin skipped: shared plugin API is unavailable.")
+	return
+end
+local _loadedPlugins = H._loadedPlugins
+if type(_loadedPlugins) ~= "table" then
+	_loadedPlugins = {}
+	H._loadedPlugins = _loadedPlugins
+end
+if _loadedPlugins.Rank then
+	return
+end
+_loadedPlugins.Rank = true
+H.onDestroy(function()
+	_loadedPlugins.Rank = nil
+end)
+local T, FS, new, corner, stroke, grad, tween = H.T, H.FS, H.new, H.corner, H.stroke, H.grad, H.tween
+local newScroll, addHeader, addEmpty, clearList, thumb, ME = H.newScroll, H.addHeader, H.addEmpty, H.clearList, H.thumb, H.me
+local Players = game:GetService("Players")
+local WHITE = Color3.new(1, 1, 1)
+local INK2 = Color3.fromRGB(15, 17, 25)
+local METAL = { Color3.fromRGB(255, 203, 64), Color3.fromRGB(205, 213, 230), Color3.fromRGB(214, 132, 72) } -- gold, silver, bronze
+local HttpService = game:GetService("HttpService")
+local BATCH = 20 -- rows shown at a time; the "Load next 20" button adds the next batch
+
+local page = H.page
+for _, c in ipairs(page:GetChildren()) do c:Destroy() end
+local sc = newScroll(page)
+
+local board, names = {}, {}
+local NAMEFILE = H.cache .. "/ranknames.json"
+local namesDirty = false
+pcall(function()
+	if isfile and readfile and isfile(NAMEFILE) then
+		local d = HttpService:JSONDecode(readfile(NAMEFILE))
+		if type(d) == "table" and type(d.names) == "table" then
+			for id, v in pairs(d.names) do
+				if type(v) == "table" and type(v.d) == "string" and type(v.u) == "string" and os.time() - (tonumber(v.t) or 0) < 604800 then
+					names[id] = { dn = v.d, un = v.u, keep = true, t = tonumber(v.t) or 0 }
+				end
+			end
+		end
+	end
+end)
+local function saveNames()
+	if not namesDirty then return end
+	namesDirty = false
+	pcall(function()
+		if not writefile then return end
+		local out = {}
+		for id, v in pairs(names) do
+			if v.keep then out[id] = { d = v.dn, u = v.un, t = v.t or os.time() } end
+		end
+		writefile(NAMEFILE, HttpService:JSONEncode({ names = out }))
+	end)
+end
+local function apiName(id)
+	if not H.request then return nil end
+	local ok, res = pcall(H.request, { Url = "https://users.roblox.com/v1/users/" .. id, Method = "GET" })
+	if ok and type(res) == "table" and res.StatusCode == 200 and res.Body then
+		local okd, d = pcall(function() return HttpService:JSONDecode(res.Body) end)
+		if okd and type(d) == "table" and type(d.name) == "string" then
+			local dn = (type(d.displayName) == "string" and d.displayName ~= "") and d.displayName or d.name
+			return { dn = dn, un = d.name }
+		end
+	end
+	return nil
+end
+local stamp, loading, errMsg, lastManual = -1e9, false, nil, -1e9
+local render
+local full, gen = nil, 0
+local myRank, myC
+local hdrRight
+local shown, moreBtn = 0, nil
+local showBoard
+local load
+local loadMore
+
+local function openP(e)
+	if T.openProfile then T.openProfile(e.id, e.dn, e.un) end
+end
+
+local function makeRow(e, i)
+	local top = i <= 3
+	local tier = FS.tierOf(e.c)
+	local col = top and METAL[i] or FS.TCOL[tier]
+	local h = top and 66 or 54
+	local r = new("TextButton", { Size = UDim2.new(1, 0, 0, h), BackgroundColor3 = top and col or WHITE,
+		BackgroundTransparency = top and 0.86 or 0.94, Text = "", AutoButtonColor = false, LayoutOrder = 10 + i, Parent = sc },
+		{ corner(14) })
+	local st = stroke(top and 0.4 or 0.75)
+	st.Color = col
+	st.Parent = r
+	if not top then
+		new("Frame", { Position = UDim2.fromOffset(0, 12), Size = UDim2.fromOffset(3, h - 24), BackgroundColor3 = col, Parent = r }, { corner(2) })
+	end
+	local bs = top and 38 or 32
+	new("TextLabel", { Position = UDim2.fromOffset(12, (h - bs) / 2), Size = UDim2.fromOffset(bs, bs), BackgroundColor3 = col,
+		BackgroundTransparency = top and 0 or 0.8, Text = top and tostring(i) or ("#" .. i), Font = T.fontB, TextSize = top and 17 or 12,
+		TextColor3 = top and INK2 or col, Parent = r }, { corner(bs / 2) })
+	local ax = 12 + bs + 10
+	local av = new("ImageButton", { Position = UDim2.fromOffset(ax, (h - 38) / 2), Size = UDim2.fromOffset(38, 38), BackgroundColor3 = WHITE,
+		BackgroundTransparency = 0.88, Image = thumb(e.id), AutoButtonColor = false, Parent = r }, { corner(19) })
+	av.Activated:Connect(function() openP(e) end)
+	local nx = ax + 38 + 10
+	new("TextLabel", { Position = UDim2.fromOffset(nx, h / 2 - 17), Size = UDim2.new(1, -(nx + 118), 0, 18), BackgroundTransparency = 1,
+		Text = (e.dn or ("User " .. e.id)) .. (e.id == ME and "  (you)" or ""), Font = T.fontB, TextSize = 14, TextColor3 = T.text,
+		TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Parent = r })
+	new("TextLabel", { Position = UDim2.fromOffset(nx, h / 2 + 2), Size = UDim2.new(1, -(nx + 118), 0, 15), BackgroundTransparency = 1,
+		Text = (e.un and e.un ~= "") and ("@" .. e.un) or "", Font = T.font, TextSize = 11, TextColor3 = T.mut,
+		TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Parent = r })
+	new("TextLabel", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, h / 2 - 17), Size = UDim2.fromOffset(104, 18),
+		BackgroundTransparency = 1, Text = e.c .. (e.c == 1 and " follower" or " followers"), Font = T.fontB, TextSize = 13, TextColor3 = col,
+		TextXAlignment = Enum.TextXAlignment.Right, Parent = r })
+	new("TextLabel", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, h / 2 + 2), Size = UDim2.fromOffset(104, 15),
+		BackgroundTransparency = 1, Text = "Tier " .. FS.ROMAN[tier], Font = T.font, TextSize = 11, TextColor3 = T.mut,
+		TextXAlignment = Enum.TextXAlignment.Right, Parent = r })
+	r.Activated:Connect(function() openP(e) end)
+end
+
+local OWNER_ID = "3343561540"
+local OWNER_NAME = "BannedAgain_Saiki"
+local OWNER_FRAME = "x_frame21"
+
+if not T.ownerFrameHooked then
+	T.ownerFrameHooked = true
+	local origKey = T.frameKeyFor
+	T.frameKeyFor = function(id)
+		if tostring(id) == OWNER_ID and H.CONFIG and H.CONFIG.FRAMES and H.CONFIG.FRAMES[OWNER_FRAME] and not (T.frameChoice and T.frameChoice[OWNER_ID]) then
+			return OWNER_FRAME
+		end
+		return origKey(id)
+	end
+	if T.refreshFrames then pcall(T.refreshFrames) end
+end
+
+local function makeOwnerBanner()
+	local b = new("Frame", { Size = UDim2.new(1, 0, 0, 100), BackgroundColor3 = METAL[1], BackgroundTransparency = 0.88,
+		LayoutOrder = 0, Parent = sc }, { corner(16) })
+	local st = stroke(0.3)
+	st.Color = METAL[1]
+	st.Parent = b
+	local av = new("ImageButton", { Position = UDim2.fromOffset(26, 24), Size = UDim2.fromOffset(52, 52), BackgroundColor3 = WHITE,
+		BackgroundTransparency = 0.88, Image = thumb(OWNER_ID), AutoButtonColor = false, Parent = b }, { corner(26) })
+	av.Activated:Connect(function()
+		if T.openProfile then T.openProfile(OWNER_ID, OWNER_NAME, "") end
+	end)
+	new("TextLabel", { Position = UDim2.fromOffset(104, 28), Size = UDim2.new(1, -120, 0, 24), BackgroundTransparency = 1, Text = OWNER_NAME,
+		Font = T.fontB, TextSize = 20, TextColor3 = METAL[1], TextXAlignment = Enum.TextXAlignment.Left,
+		TextTruncate = Enum.TextTruncate.AtEnd, Parent = b })
+	new("TextLabel", { Position = UDim2.fromOffset(104, 54), Size = UDim2.new(1, -120, 0, 16), BackgroundTransparency = 1,
+		Text = "OWNER  ·  MAKER  ·  GODFATHER OF SAIKI RECHAT", Font = T.fontB, TextSize = 10, TextColor3 = T.mut,
+		TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Parent = b })
+end
+
+function render()
+	if not page.Parent then return end
+	local keep = sc.CanvasPosition
+	clearList(sc)
+	moreBtn = nil
+	makeOwnerBanner()
+	addHeader(sc, "Leaderboard", 1, loading and "updating…" or ("top " .. shown))
+	hdrRight = nil
+	for _, c in ipairs(sc:GetChildren()) do
+		if c:IsA("TextLabel") and c.LayoutOrder == 1 then hdrRight = c:FindFirstChildOfClass("TextLabel") end
+	end
+
+	-- my own rank
+	local card = new("Frame", { Size = UDim2.new(1, 0, 0, 56), BackgroundColor3 = WHITE, BackgroundTransparency = 0.94, LayoutOrder = 2, Parent = sc },
+		{ corner(14), stroke(0.92) })
+	new("TextLabel", { Position = UDim2.fromOffset(14, 9), Size = UDim2.new(1, -120, 0, 16), BackgroundTransparency = 1, Text = "YOUR RANK",
+		Font = T.fontB, TextSize = 11, TextColor3 = T.mut, TextXAlignment = Enum.TextXAlignment.Left, Parent = card })
+	new("TextLabel", { Position = UDim2.fromOffset(14, 26), Size = UDim2.new(1, -120, 0, 22), BackgroundTransparency = 1,
+		Text = myRank and ("#" .. myRank .. "  ·  " .. myC .. (myC == 1 and " follower" or " followers")) or "Unranked  ·  get your first follower",
+		Font = T.fontB, TextSize = 15, TextColor3 = T.text, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd,
+		Parent = card })
+	local rf = new("TextButton", { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -12, 0.5, 0), Size = UDim2.fromOffset(78, 30),
+		BackgroundColor3 = WHITE, Text = "Refresh", Font = T.fontB, TextSize = 12, TextColor3 = INK2, AutoButtonColor = false, Parent = card },
+		{ corner(15), grad(20) })
+	rf.Activated:Connect(function()
+		if loading or os.clock() - lastManual < 8 then return end
+		lastManual = os.clock()
+		task.spawn(load)
+	end)
+
+	if errMsg then
+		addEmpty(sc, errMsg, 5, 50)
+	elseif #board == 0 then
+		addEmpty(sc, (loading or (full and #full > 0)) and "Loading leaderboard…" or "Nobody has followers yet.\nOpen a DM and follow someone to start the board!", 5, 50)
+	end
+	for i, e in ipairs(board) do makeRow(e, i) end
+	sc.CanvasPosition = keep
+end
+
+-- names: /profiles first, Roblox lookup as fallback
+local function resolve(e)
+	if e.id == OWNER_ID and e.id ~= ME then
+		e.dn, e.un = OWNER_NAME, ""
+		return
+	end
+	local nm = names[e.id]
+	local live = (e.id == H.me) and Players.LocalPlayer or Players:GetPlayerByUserId(tonumber(e.id) or 0)
+	if live then -- live name from the game itself, never stale
+		if not nm or nm.dn ~= live.DisplayName or nm.un ~= live.Name then namesDirty = true end
+		nm = { dn = live.DisplayName, un = live.Name, keep = true, t = os.time() }
+		names[e.id] = nm
+		e.dn, e.un = nm.dn, nm.un
+		return
+	end
+	-- Refresh cached display names from Roblox periodically; keep the cached value if the API is unavailable.
+	if nm and os.time() - (tonumber(nm.t) or 0) > 300 then
+		local fresh = apiName(e.id)
+		if fresh then
+			fresh.keep, fresh.t = true, os.time()
+			if fresh.dn ~= nm.dn or fresh.un ~= nm.un or fresh.t ~= nm.t then namesDirty = true end
+			names[e.id], nm = fresh, fresh
+		end
+	end
+	if not nm then
+		local pl = Players:GetPlayerByUserId(tonumber(e.id) or 0)
+		if pl then nm = { dn = pl.DisplayName, un = pl.Name, keep = true, t = os.time() } end
+		if not nm then
+			local okp, pd = FS.req("GET", "/profiles/" .. e.id)
+			if okp and type(pd) == "table" and pd.username then
+				if type(pd.displayName) == "string" and pd.displayName ~= "" and pd.displayName ~= pd.username then
+					nm = { dn = pd.displayName, un = pd.username, keep = true, t = os.time() }
+				else
+					nm = apiName(e.id) -- profile has no separate display name: ask Roblox
+					if nm then nm.keep, nm.t = true, os.time() else nm = { dn = pd.username, un = pd.username } end
+				end
+			end
+		end
+		if not nm then
+			nm = apiName(e.id)
+			if nm then nm.keep, nm.t = true, os.time() end
+		end
+		if not nm then
+			local oku, un = pcall(function() return Players:GetNameFromUserIdAsync(tonumber(e.id)) end)
+			if oku and un then nm = { dn = un, un = un } else nm = { dn = "User " .. e.id, un = "" } end
+		end
+		if nm.keep then namesDirty = true end
+		names[e.id] = nm
+	end
+	e.dn, e.un = nm.dn, nm.un
+end
+
+-- the "Load next 20" button sits under the last row
+local function setMore()
+	if moreBtn then moreBtn:Destroy() moreBtn = nil end
+	if not full or loading or shown >= #full then return end
+	local left = #full - shown
+	moreBtn = new("TextButton", { Size = UDim2.new(1, 0, 0, 44), BackgroundColor3 = WHITE, LayoutOrder = 100000,
+		Text = "Load next " .. math.min(BATCH, left) .. "  ·  " .. left .. " more", Font = T.fontB, TextSize = 13, TextColor3 = INK2,
+		AutoButtonColor = false, Parent = sc }, { corner(14), grad(20) })
+	moreBtn.Activated:Connect(function() task.spawn(loadMore) end)
+end
+
+-- adds the next BATCH rows (names looked up in rank order, rows added strictly top to bottom)
+function loadMore()
+	if not full or loading then return end
+	local from, to = shown + 1, math.min(shown + BATCH, #full)
+	if from > to then return end
+	local my = gen
+	loading = true
+	setMore()
+	local list = {}
+	for i = from, to do list[#list + 1] = { id = full[i].id, c = full[i].c } end
+
+	local nextI = 0
+	local function worker()
+		while my == gen do
+			nextI = nextI + 1
+			local e = list[nextI]
+			if not e then return end
+			pcall(resolve, e)
+		end
+	end
+	for _ = 1, 6 do task.spawn(worker) end
+
+	for k, e in ipairs(list) do
+		local t0 = os.clock()
+		while not e.dn and os.clock() - t0 < 12 and my == gen do task.wait(0.05) end
+		if my ~= gen then return end
+		if not e.dn then e.dn, e.un = "User " .. e.id, "" end
+		if FS.cache then FS.cache[e.id] = { c = e.c, t = os.clock() } end
+		if k == 1 then
+			for _, c in ipairs(sc:GetChildren()) do
+				if c:IsA("GuiObject") and c.LayoutOrder == 5 then c:Destroy() end
+			end
+		end
+		local rank = from + k - 1
+		board[rank] = e
+		makeRow(e, rank)
+		if hdrRight and hdrRight.Parent then hdrRight.Text = "loading " .. k .. "/" .. #list end
+		if k % 4 == 0 then task.wait() end -- spread row building over frames
+	end
+	if my ~= gen then return end
+	shown = to
+	loading, stamp = false, os.clock()
+	saveNames()
+	if hdrRight and hdrRight.Parent then hdrRight.Text = "top " .. shown end
+	setMore()
+end
+
+-- fresh data: starts again from the first batch
+function showBoard()
+	if not full then return end
+	gen = gen + 1
+	board, myRank, myC, shown = {}, nil, nil, 0
+	for i, e in ipairs(full) do
+		if e.id == ME then myRank, myC = i, e.c break end
+	end
+	render()
+	loadMore()
+end
+
+
+-- downloads the follower list once, sorts it, then shows the first batch
+function load()
+	if loading then return end
+	loading = true
+	errMsg = nil
+	if #board == 0 then
+		render()
+	elseif hdrRight and hdrRight.Parent then
+		hdrRight.Text = "updating…"
+	end
+	local ok, data, raw, code = FS.req("GET", "/followers")
+	if not ok then
+		errMsg = "Couldn't load the leaderboard (" .. tostring(code) .. "). Check the sxikiflowsys rules are published."
+		loading = false
+		render()
+		return
+	end
+	local list = {}
+	if type(data) == "table" then
+		for id, ups in pairs(data) do
+			if type(ups) == "table" and tostring(id):match("^%d+$") then
+				local n = 0
+				for _ in pairs(ups) do n = n + 1 end
+				if n > 0 then list[#list + 1] = { id = tostring(id), c = n } end
+			end
+		end
+	end
+	table.sort(list, function(a, b)
+		if a.c ~= b.c then return a.c > b.c end
+		return a.id < b.id
+	end)
+	full = list
+	loading = false
+	showBoard()
+end
+
+-- ===================== Moderator follower cap =====================
+-- Moderators only. Button at the top-left of this tab. Sets a max follower count for any user;
+-- anything above it is removed right away (newest followers first), and each removed follower
+-- also loses that user from their own following list. Caps are kept in /followcaps/<id> and
+-- enforced every few seconds by any moderator who has the script open.
+local CAP_POLL, CAP_SYNC, CAP_WORKERS = 2, 20, 16
+local CAPFILE = H.cache .. "/followcaps_" .. tostring(ME) .. ".json"
+local caps = {} -- [id] = { max = n, by = id, ts = n, remote = bool }
+local capAlive, capBusy = true, false
+local capList, capStatus, capUser, capMax, capBtn
+local capPanel
+
+local function isModNow() return T.isMod and T.isMod(ME) and true or false end
+
+local function capSaveLocal()
+	pcall(function()
+		if not writefile then return end
+		local out = {}
+		for id, c in pairs(caps) do out[id] = { max = c.max, by = c.by, ts = c.ts, remote = c.remote } end
+		writefile(CAPFILE, HttpService:JSONEncode({ caps = out }))
+	end)
+end
+pcall(function()
+	if isfile and readfile and isfile(CAPFILE) then
+		local d = HttpService:JSONDecode(readfile(CAPFILE))
+		if type(d) == "table" and type(d.caps) == "table" then
+			for id, c in pairs(d.caps) do
+				if type(c) == "table" and tonumber(c.max) and tostring(id):match("^%d+$") then
+					caps[tostring(id)] = { max = math.floor(tonumber(c.max)), by = tostring(c.by or ""), ts = tonumber(c.ts) or 0, remote = c.remote == true }
+				end
+			end
+		end
+	end
+end)
+
+local function capName(id)
+	local n = names[id]
+	if n and n.dn then return n.dn .. " (" .. id .. ")" end
+	return tostring(id)
+end
+
+local function setStatus(t, good)
+	if capStatus and capStatus.Parent then
+		capStatus.Text = t
+		capStatus.TextColor3 = good == true and Color3.fromRGB(110, 220, 150) or good == false and Color3.fromRGB(255, 120, 120) or T.mut
+	end
+end
+
+-- followers of a user: list of { fuid, rid, ts }
+local function followersOf(id)
+	local ok, data, _, code = FS.req("GET", "/followers/" .. id)
+	if not ok then return nil, code end
+	local list = {}
+	if type(data) == "table" then
+		for fuid, r in pairs(data) do
+			local e = { fuid = tostring(fuid), ts = 0 }
+			if type(r) == "table" then
+				e.ts = tonumber(r.ts) or 0
+				e.rid = tonumber(r.rid) and string.format("%.0f", tonumber(r.rid)) or nil
+			end
+			list[#list + 1] = e
+		end
+	end
+	return list
+end
+
+-- takes one follower off a user, and the user off that follower's following list
+local function removeFollower(target, e)
+	local ok, _, _, code = FS.req("DELETE", "/followers/" .. target .. "/" .. e.fuid)
+	if not ok then return false, code end
+	FS.req("DELETE", "/follows/" .. e.fuid .. "/" .. target)
+	if e.rid then
+		FS.req("DELETE", "/following/" .. e.rid .. "/" .. target)
+		if e.rid == tostring(ME) and FS.following then FS.following[target] = nil end
+	end
+	return true
+end
+
+-- cuts a user down to `max` followers, newest first, several at a time
+local function trim(target, max)
+	local list, code = followersOf(target)
+	if not list then return nil, "couldn't read followers (HTTP " .. tostring(code) .. ")" end
+	local excess = #list - max
+	if excess <= 0 then
+		if FS.cache then FS.cache[target] = { c = #list, t = os.clock() } end
+		return 0, 0
+	end
+	table.sort(list, function(a, b)
+		if a.ts ~= b.ts then return a.ts > b.ts end
+		return a.fuid > b.fuid
+	end)
+	local nxt, done, removed, failed, lastCode = 0, 0, 0, 0, nil
+	local workers = math.min(CAP_WORKERS, excess)
+	for _ = 1, workers do
+		task.spawn(function()
+			while true do
+				nxt += 1
+				local i = nxt
+				if i > excess then break end
+				local ok, c = removeFollower(target, list[i])
+				if ok then removed += 1 else failed += 1; lastCode = c end
+			end
+			done += 1
+		end)
+	end
+	while done < workers do task.wait() end
+	if FS.cache then FS.cache[target] = { c = #list - removed, t = os.clock() } end
+	return removed, failed, lastCode
+end
+
+local capfull = {} -- [id] = true while that user is at/over their cap; the database rules refuse new follows then
+local function countOf(id)
+	local ok, data = FS.req("GET", "/followers/" .. id, nil, "shallow=true")
+	if not ok then return nil end
+	local n = 0
+	if type(data) == "table" then for _ in pairs(data) do n += 1 end end
+	return n
+end
+local function setFull(id, full)
+	if full and not capfull[id] then
+		if FS.req("PUT", "/capfull/" .. id, true) then capfull[id] = true end
+	elseif not full and capfull[id] ~= false then
+		if FS.req("DELETE", "/capfull/" .. id) then capfull[id] = false end
+	end
+end
+local function dropCap(id)
+	FS.req("DELETE", "/followcaps/" .. id)
+	FS.req("DELETE", "/capfull/" .. id)
+	capfull[id] = false
+end
+
+local function remoteCaps()
+	local ok, data = FS.req("GET", "/followcaps")
+	if not ok then return false end
+	local seen = {}
+	if type(data) == "table" then
+		for id, c in pairs(data) do
+			id = tostring(id)
+			if type(c) == "table" and tonumber(c.max) and id:match("^%d+$") then
+				seen[id] = true
+				caps[id] = { max = math.max(0, math.floor(tonumber(c.max))), by = tostring(c.by or ""), ts = tonumber(c.ts) or 0, remote = true }
+			end
+		end
+	end
+	for id, c in pairs(caps) do
+		if c.remote and not seen[id] then caps[id] = nil end -- lifted by another moderator
+	end
+	capSaveLocal()
+	return true
+end
+
+local function drawCaps()
+	if not (capList and capList.Parent) then return end
+	for _, c in ipairs(capList:GetChildren()) do
+		if c:IsA("GuiObject") then c:Destroy() end
+	end
+	local ids = {}
+	for id in pairs(caps) do ids[#ids + 1] = id end
+	table.sort(ids)
+	if #ids == 0 then
+		new("TextLabel", { Size = UDim2.new(1, 0, 0, 24), BackgroundTransparency = 1, Text = "No caps set.", Font = T.font, TextSize = 12,
+			TextColor3 = T.mut, Parent = capList })
+		return
+	end
+	for i, id in ipairs(ids) do
+		local c = caps[id]
+		local row = new("Frame", { Size = UDim2.new(1, -4, 0, 30), BackgroundColor3 = WHITE, BackgroundTransparency = 0.94, LayoutOrder = i, Parent = capList },
+			{ corner(8) })
+		new("TextLabel", { Position = UDim2.fromOffset(10, 0), Size = UDim2.new(1, -52, 1, 0), BackgroundTransparency = 1,
+			Text = capName(id) .. "  ·  max " .. c.max .. (c.remote and "" or "  (local only)"), Font = T.font, TextSize = 12, TextColor3 = T.text,
+			TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Parent = row })
+		local x = new("TextButton", { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -4, 0.5, 0), Size = UDim2.fromOffset(34, 24),
+			BackgroundTransparency = 1, Text = "✕", Font = T.fontB, TextSize = 14, TextColor3 = Color3.fromRGB(255, 120, 120), AutoButtonColor = false, Parent = row })
+		x.Activated:Connect(function()
+			if not isModNow() then return end
+			dropCap(id)
+			caps[id] = nil
+			capSaveLocal()
+			drawCaps()
+			setStatus("Cap removed for " .. capName(id) .. ".", true)
+		end)
+	end
+end
+
+local function lookupUser(txt)
+	txt = (txt or ""):gsub("^%s+", ""):gsub("%s+$", "")
+	if txt == "" then return nil end
+	if txt:match("^%d+$") then return txt end
+	local ok, id = pcall(function() return Players:GetUserIdFromNameAsync(txt) end)
+	if ok and id then return string.format("%.0f", id) end
+	return nil
+end
+
+local function applyCap()
+	if capBusy then return end
+	if not isModNow() then setStatus("Moderators only.", false) return end
+	local id = lookupUser(capUser.Text)
+	local max = tonumber(capMax.Text)
+	if not id then setStatus("Enter a valid user ID or username.", false) return end
+	if not max or max < 0 or max ~= math.floor(max) then setStatus("Enter a whole number, 0 or more.", false) return end
+	capBusy = true
+	setStatus("Setting cap…")
+	local rec = { max = max, by = tostring(ME), ts = os.time() * 1000 }
+	local okp = FS.req("PUT", "/followcaps/" .. id, rec)
+	caps[id] = { max = max, by = rec.by, ts = rec.ts, remote = okp and true or false }
+	capSaveLocal()
+	drawCaps()
+	setStatus("Trimming…")
+	local removed, failed, code = trim(id, max)
+	if removed ~= nil then setFull(id, (countOf(id) or max) >= max) end
+	capBusy = false
+	if removed == nil then
+		setStatus(tostring(failed), false)
+	elseif failed > 0 then
+		setStatus("Removed " .. removed .. ", " .. failed .. " refused (HTTP " .. tostring(code) .. "). Allow moderators to delete in the sxikiflowsys rules.", false)
+	else
+		setStatus((okp and "Cap saved" or "Cap kept locally (publish a /followcaps rule to share it)") .. (removed > 0 and ("  ·  removed " .. removed) or "") .. ".", okp and true or nil)
+	end
+end
+
+local function removeCapFromBox()
+	if not isModNow() then setStatus("Moderators only.", false) return end
+	local id = lookupUser(capUser.Text)
+	if not id or not caps[id] then setStatus("That user has no cap.", false) return end
+	dropCap(id)
+	caps[id] = nil
+	capSaveLocal()
+	drawCaps()
+	setStatus("Cap removed for " .. capName(id) .. ".", true)
+end
+
+local function buildCapPanel()
+	capPanel = new("Frame", { Position = UDim2.fromOffset(8, 44), Size = UDim2.new(1, -16, 0, 292), BackgroundColor3 = INK2, BackgroundTransparency = 0.04,
+		Visible = false, ZIndex = 30, Parent = page }, { corner(14), stroke(0.8) })
+	new("TextLabel", { Position = UDim2.fromOffset(14, 8), Size = UDim2.new(1, -28, 0, 18), BackgroundTransparency = 1, Text = "FOLLOWER CAP  ·  MODERATORS",
+		Font = T.fontB, TextSize = 11, TextColor3 = T.mut, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 31, Parent = capPanel })
+	local uidBtn = new("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 6), Size = UDim2.fromOffset(104, 22), BackgroundTransparency = 1,
+		Text = "Copy my uid", Font = T.fontB, TextSize = 11, TextColor3 = T.mut, AutoButtonColor = false, ZIndex = 31, Parent = capPanel })
+	uidBtn.Activated:Connect(function()
+		local uid
+		pcall(function()
+			local d = HttpService:JSONDecode(readfile(H.cache .. "/session_sxikiflowsys_" .. tostring(ME) .. ".json"))
+			uid = d and d.uid
+		end)
+		if not uid then setStatus("No follower login saved yet. Open Saiki Rechat once, then try again.", false) return end
+		if setclipboard then setclipboard(tostring(uid)) end
+		setStatus("Your uid: " .. tostring(uid) .. (setclipboard and "  (copied)" or ""), true)
+	end)
+	local function box(y, w, x, ph)
+		return new("TextBox", { Position = UDim2.fromOffset(x, y), Size = UDim2.new(0, w, 0, 30), BackgroundColor3 = WHITE, BackgroundTransparency = 0.92,
+			Text = "", PlaceholderText = ph, PlaceholderColor3 = T.mut, TextColor3 = T.text, Font = T.font, TextSize = 13, ClearTextOnFocus = false,
+			TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 31, Parent = capPanel }, { corner(8), new("UIPadding", { PaddingLeft = UDim.new(0, 10) }) })
+	end
+	capUser = box(32, 190, 14, "User ID or username")
+	capMax = box(32, 84, 212, "Max")
+	capUser.Size = UDim2.new(1, -124, 0, 30)
+	capMax.AnchorPoint = Vector2.new(1, 0)
+	capMax.Position = UDim2.new(1, -14, 0, 32)
+	local function btn(txt, x, w)
+		return new("TextButton", { Position = UDim2.fromOffset(x, 70), Size = UDim2.fromOffset(w, 30), BackgroundColor3 = WHITE, Text = txt, Font = T.fontB, TextSize = 12,
+			TextColor3 = INK2, AutoButtonColor = false, ZIndex = 31, Parent = capPanel }, { corner(15), grad(20) })
+	end
+	btn("Apply cap", 14, 96).Activated:Connect(function() task.spawn(applyCap) end)
+	btn("Remove cap", 118, 100).Activated:Connect(removeCapFromBox)
+	capStatus = new("TextLabel", { Position = UDim2.fromOffset(14, 106), Size = UDim2.new(1, -28, 0, 30), BackgroundTransparency = 1, Text = "Followers above the max are removed, newest first.",
+		Font = T.font, TextSize = 11, TextColor3 = T.mut, TextWrapped = true, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Top,
+		ZIndex = 31, Parent = capPanel })
+	new("TextLabel", { Position = UDim2.fromOffset(14, 140), Size = UDim2.new(1, -28, 0, 16), BackgroundTransparency = 1, Text = "ACTIVE CAPS", Font = T.fontB, TextSize = 11,
+		TextColor3 = T.mut, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 31, Parent = capPanel })
+	capList = new("ScrollingFrame", { Position = UDim2.fromOffset(14, 160), Size = UDim2.new(1, -28, 1, -172), BackgroundTransparency = 1, BorderSizePixel = 0,
+		ScrollBarThickness = 3, CanvasSize = UDim2.new(), AutomaticCanvasSize = Enum.AutomaticSize.Y, ZIndex = 31, Parent = capPanel },
+		{ new("UIListLayout", { Padding = UDim.new(0, 4), SortOrder = Enum.SortOrder.LayoutOrder }) })
+	drawCaps()
+end
+
+local scPos0, scSize0 = sc.Position, sc.Size
+local function refreshMod()
+	local mod = isModNow()
+	if capBtn then capBtn.Visible = mod end
+	if not mod and capPanel then capPanel.Visible = false end
+	sc.Position = mod and UDim2.new(scPos0.X.Scale, scPos0.X.Offset, scPos0.Y.Scale, scPos0.Y.Offset + 40) or scPos0
+	sc.Size = mod and UDim2.new(scSize0.X.Scale, scSize0.X.Offset, scSize0.Y.Scale, scSize0.Y.Offset - 40) or scSize0
+end
+
+capBtn = new("TextButton", { Position = UDim2.fromOffset(8, 6), Size = UDim2.fromOffset(86, 30), BackgroundColor3 = WHITE, Text = "Follow cap", Font = T.fontB,
+	TextSize = 12, TextColor3 = INK2, AutoButtonColor = false, Visible = false, ZIndex = 32, Parent = page }, { corner(15), grad(20) })
+buildCapPanel()
+capBtn.Activated:Connect(function()
+	if not isModNow() then refreshMod() return end
+	capPanel.Visible = not capPanel.Visible
+	if capPanel.Visible then drawCaps() end
+end)
+H.onShow(4, refreshMod)
+H.onDestroy(function() capAlive = false end)
+
+-- Everyone's client reads the caps and refuses new follows to a user who is already at their cap.
+local origFollow = FS.follow
+function FS.follow(id, name, user)
+	local c = caps[tostring(id)]
+	if c then
+		local n = FS.count(id, true)
+		if n and n >= c.max then return false, "this user has reached their follower limit" end
+	end
+	return origFollow(id, name, user)
+end
+H.onDestroy(function() FS.follow = origFollow end)
+
+task.spawn(function()
+	local lastSync = -1e9
+	while capAlive and page.Parent do
+		refreshMod()
+		if os.clock() - lastSync > CAP_SYNC then
+			lastSync = os.clock()
+			if remoteCaps() then drawCaps() end
+		end
+		if isModNow() then
+			for id, c in pairs(caps) do
+				if not capAlive or not isModNow() then break end
+				if not capBusy then
+					local ok, data = FS.req("GET", "/followers/" .. id, nil, "shallow=true")
+					if ok then
+						local n = 0
+						if type(data) == "table" then for _ in pairs(data) do n += 1 end end
+						if n > c.max then
+							capBusy = true
+							local removed, failed = trim(id, c.max)
+							if removed then n = countOf(id) or c.max end
+							capBusy = false
+							if removed and removed > 0 then setStatus("Auto-trimmed " .. capName(id) .. ": removed " .. removed .. (failed > 0 and (", " .. failed .. " refused") or "") .. ".", failed == 0) end
+						end
+						setFull(id, n >= c.max)
+					end
+				end
+				task.wait(0.15)
+			end
+		end
+		task.wait(CAP_POLL)
+	end
+end)
+
+H.onShow(4, function()
+	-- loads only once; the Refresh button is the only way to load again
+	if not full and not loading then task.spawn(load) end
+end)
+render()
