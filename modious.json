@@ -31,7 +31,7 @@ end
 local cache={}pcall(function()if isfile and readfile and isfile(MODFILE)then
 local d=HttpService:JSONDecode(readfile(MODFILE))if type(d)=="table"and type(d.ids)=="table"then cache=d.ids end
 end
-end)local out={}if list then
+end)local out={}if list and #list>0 then
 T.modNames=list
 for _,nm in ipairs(list)do
 local low=nm:lower()local id
@@ -44,6 +44,7 @@ pcall(function()if writefile then writefile(MODFILE,HttpService:JSONEncode({ids=
 out=cache
 end
 local set={}for _,id in pairs(out)do set[tostring(id)]=true end
+if not list or #list==0 then for id,was in pairs(ids)do if was then set[tostring(id)]=true end end end
 ids,ready=set,true
 end
 local function parseMods(data)local mute,title,granted={},{},{}local titleColor={}local nowms=nowMs()for target,byMap in pairs(data.mute or{})do
@@ -1996,10 +1997,15 @@ task.spawn(function()while V.alive do
 if fsOk()then pcall(poll)end
 task.wait(3)end
 end)task.spawn(function()while V.alive do
-pcall(function()musicBtn.Visible=isMe()==true
+pcall(function()
+-- Do not toggle Music visibility or close its page while permissions are still initializing.
+if T.modsReady and T.modsReady() then
+musicBtn.Visible=isMe()==true
+if not isMe()and V.cur==MIDX then closePanel()end
+end
 if P.scope then P.scope.Visible=(T.isMod and T.isMod(ME))==true end
 musicBtn.Position=musicBtnPos()
-if not isMe()and V.cur==MIDX then closePanel()end end)pcall(syncSound)pcall(nextQ)pcall(function()if refreshPanel then refreshPanel()end end)pcall(function()if updateCard then updateCard()end end)task.wait(1)end
+end)pcall(syncSound)pcall(nextQ)pcall(function()if refreshPanel then refreshPanel()end end)pcall(function()if updateCard then updateCard()end end)task.wait(1)end
 end)conns[#conns+1]={Disconnect=function()M.gen+=1
 pcall(function()if panel then panel:Destroy()end;pages[MIDX]=nil end)killSound()pcall(function()musicBtn:Destroy()end)T.modCmd=baseCmd
 T.modSuggest=baseSuggest
@@ -2121,12 +2127,13 @@ end
 if n%2==0 then flushAll(false)end
 task.wait(CONFIG.POLL)end
 end)local function Destroy()if not V.alive then return end
+if type(genv.SaikiRechat)=="table" then genv.SaikiRechat.Active=false end
 V.alive=false
 pcall(flushAll,true)for _,c in ipairs(conns)do pcall(function()c:Disconnect()end)end
 pcall(function()gui:Destroy()end)pcall(function()if V.blur then V.blur:Destroy()end end)if CONFIG.HIDE_ROBLOX_CHAT then setRbxChat(true)end
 genv.SaikiRechat=nil
 end
-genv.SaikiRechat={Destroy=Destroy,Toggle=function()setOpen(not V.isOpen)end};(function()local H={T=T,gui=gui,win=win,container=container,pages=pages,winScale=winScale,new=new,corner=corner,stroke=stroke,grad=grad,tween=tween,toast=toast,bind=bind,newScroll=newScroll,addHeader=addHeader,addEmpty=addEmpty,clearList=clearList,thumb=thumb,FS=FS,fitScale=fitScale,CONFIG=CONFIG,blur=V.blur,request=V.REQUEST,cache=CACHE,me=ME,open=function()return V.isOpen end,onDestroy=function(f)conns[#conns+1]={Disconnect=f}end,onShow=function(idx,f)local prev=V.onShowTab
+genv.SaikiRechat={Active=true,Destroy=Destroy,Toggle=function()setOpen(not V.isOpen)end};(function()local H={T=T,gui=gui,win=win,container=container,pages=pages,winScale=winScale,new=new,corner=corner,stroke=stroke,grad=grad,tween=tween,toast=toast,bind=bind,newScroll=newScroll,addHeader=addHeader,addEmpty=addEmpty,clearList=clearList,thumb=thumb,FS=FS,fitScale=fitScale,CONFIG=CONFIG,blur=V.blur,request=V.REQUEST,cache=CACHE,me=ME,open=function()return V.isOpen end,onDestroy=function(f)conns[#conns+1]={Disconnect=f}end,onShow=function(idx,f)local prev=V.onShowTab
 V.onShowTab=function(i)if prev then prev(i)end
 if i==idx then f()end
 end
