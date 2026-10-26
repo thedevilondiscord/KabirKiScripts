@@ -14,7 +14,6 @@ local function srvMs()local ok,v=pcall(function()return workspace:GetServerTimeN
 return os.time()*1000
 end
 function T.isMod(id)return ids[tostring(id)]==true end
-function T.modsReady()return ready end
 function T.canMusic(id)local tid=tostring(id)if T.isMod(tid)then return true end
 local u=T.musicUntil[tid]return u~=nil and u>srvMs()end
 function T.isMuted(id)local tid=tostring(id)local u=T.muted[tid]if u==nil or T.isMod(tid)then return false end
@@ -149,7 +148,7 @@ local TCOLORS={{"pink","ff69b4"},{"red","ff4d4d"},{"orange","ff9a3c"},{"gold","f
 for _,c in ipairs(TCOLORS)do if c[1]==low then return c[2]end end
 return nil
 end
-local CMDS={"!saikikick","!saikianc","!saikiglobeanc","!giveframe","!saikicustomtitle","!saikimute","!givemusic","!saikiban","!saikiunban"}local function isCmd(w)for _,c in ipairs(CMDS)do if c==w then return true end end return false end
+local CMDS={"!saikikick","!saikianc","!giveframe","!saikicustomtitle","!saikimute","!givemusic","!saikiban","!saikiunban"}local function isCmd(w)for _,c in ipairs(CMDS)do if c==w then return true end end return false end
 local function resolveUser(name)name=name:gsub("^@","")local low=name:lower()for _,p in ipairs(Players:GetPlayers())do
 if p.Name:lower()==low or p.DisplayName:lower()==low then return string.format("%.0f",p.UserId),p.Name end
 end
@@ -198,12 +197,7 @@ local ok,code=unbanUser(id)if ok then pollMods()end
 return ok,code
 end
 T.pollMods=pollMods
-local function runCmd(view,cmd,args)if cmd=="!saikiglobeanc"then
-if args==""then view.notice("Usage: !saikiglobeAnc your announcement");return end
-if not T.globalAncSend then view.notice("Global announcements aren't ready yet, try again in a moment.");return end
-local okG,codeG=T.globalAncSend(args)if okG then view.notice("Global announcement sent. Every server running Saiki Rechat will show it within a few seconds.")elseif codeG=="cooldown"then view.notice("Wait a few seconds before sending another global announcement.")else view.notice("Couldn't send the global announcement (HTTP "..tostring(codeG).."). Publish the new sxkidirect rules (global/anc)?")end return
-end
-if cmd=="!saikianc"then
+local function runCmd(view,cmd,args)if cmd=="!saikianc"then
 if args==""then view.notice("Usage: !saikianc your announcement");return end
 view.sendText("!anc "..args)return
 end
@@ -276,7 +270,7 @@ end
 return out
 end
 local cmd,args=text:match("^(!%S+)%s(.*)$")if not cmd then return nil end
-cmd=cmd:lower()if not isCmd(cmd)or cmd=="!saikianc"or cmd=="!saikiglobeanc"then return nil end
+cmd=cmd:lower()if not isCmd(cmd)or cmd=="!saikianc"then return nil end
 local first,tail=args:match("^(%S*)(.*)$")if tail==""then
 local low=first:lower()low=low:gsub("^@","")for _,p in ipairs(Players:GetPlayers())do
 local nm,dn=p.Name:lower(),p.DisplayName:lower()local hit=low==""or nm:sub(1,#low)==low or dn:sub(1,#low)==low
@@ -506,19 +500,18 @@ return false
 end
 end)();
 (function()if not V.REQUEST then return end
-local SoundService=game:GetService("SoundService")local UserInputService=game:GetService("UserInputService")local MUSIC_DIR=CACHE.."/music"local NODE="/servers/"..enc(JOB).."/music"local GNODE="/global/music/"..ME local PREF_FILE=CACHE.."/music_pref_"..ME..".json"local LONG_SECONDS=CONFIG.MUSIC_LONG_SECONDS or 300
+local SoundService=game:GetService("SoundService")local UserInputService=game:GetService("UserInputService")local MUSIC_DIR=CACHE.."/music"local NODE="/servers/"..enc(JOB).."/music"local PREF_FILE=CACHE.."/music_pref_"..ME..".json"local LONG_SECONDS=CONFIG.MUSIC_LONG_SECONDS or 300
 local DL_KEYS=CONFIG.MUSIC_DL_KEYS or{}local YT_KEY=CONFIG.MUSIC_YT_KEY or""local MIN_BYTES=2048
-local ORANGE=Color3.fromRGB(255,170,100)local M={gen=0,sound=nil,state=nil,cur=nil,volume=.8,muted=false,key=1,status="",warn="",pct=nil,loop=false,pending=0,lastWrite=0,hinted=false,autoplay=true,}ensureFolder(MUSIC_DIR)pcall(function()if isfile and readfile and isfile(PREF_FILE)then
+local ORANGE=Color3.fromRGB(255,170,100)local M={gen=0,sound=nil,state=nil,cur=nil,volume=.8,muted=false,key=1,status="",warn="",pct=nil,loop=false,pending=0,lastWrite=0,hinted=false,}ensureFolder(MUSIC_DIR)pcall(function()if isfile and readfile and isfile(PREF_FILE)then
 local d=HttpService:JSONDecode(readfile(PREF_FILE))if type(d)=="table"then
 if type(d.volume)=="number"then M.volume=math.clamp(d.volume,0,1)end
 M.muted=d.muted==true
-if d.autoplay==false then M.autoplay=false end
 if type(d.ytKey)=="string"and#d.ytKey>=30 and#d.ytKey<=60 and d.ytKey:match("^[%w_%-]+$")then M.userKey=d.ytKey
 YT_KEY=d.ytKey
 end
 end
 end
-end)local function savePrefs()pcall(function()if writefile then writefile(PREF_FILE,HttpService:JSONEncode({volume=M.volume,muted=M.muted,ytKey=M.userKey,autoplay=M.autoplay}))end
+end)local function savePrefs()pcall(function()if writefile then writefile(PREF_FILE,HttpService:JSONEncode({volume=M.volume,muted=M.muted,ytKey=M.userKey}))end
 end)end
 local function fsOk()return type(isfile)=="function"and type(readfile)=="function"and type(writefile)=="function"and(type(getcustomasset)=="function"or type(getsynasset)=="function")end
 local function pathOf(id)return MUSIC_DIR.."/"..id..".mp3"end
@@ -647,19 +640,7 @@ c.set("Loading...",0)end
 end
 local function stopBody()return{state="stop",by=ME,n=os.time()*1000+math.random(0,999),at=nowSrv()}end
 local function write(body)M.pending+=1
-local ok,_,raw,code=dbRequest("PUT",NODE,body,auth,FIREBASE_DB)
-if M.global==true and T.isMod and T.isMod(ME)then
-local gb={}for k,v in pairs(body)do gb[k]=v end
-gb.loop=false
-gb.g=true
-pcall(T.dmId)
-local okG,_,rawG,codeG=dbRequest("PUT",GNODE,gb,dmAuth,DM_FIREBASE_DB)
-if okG then M.gOwn=true else
-local whyG=(codeG==401 or codeG==403)and("Firebase refused it ("..tostring(codeG).."). Publish the new sxkidirect rules (global/music).")or("HTTP "..tostring(codeG or rawG):sub(1,60))
-setStatus("Couldn't share with all servers: "..whyG)T.notify("musicfail","Global music","Couldn't share it globally ("..tostring(codeG or"no response")..")")
-end
-end
-M.pending-=1
+local ok,_,raw,code=dbRequest("PUT",NODE,body,auth,FIREBASE_DB)M.pending-=1
 M.lastWrite=os.clock()if not ok then
 local why=(code==401 or code==403)and("Firebase refused it ("..tostring(code).."). Add a \"music\" entry under servers/$job in the sxkicxat rules.")or("HTTP "..tostring(code or raw):sub(1,60))setStatus("Couldn't share with the server: "..why)T.notify("musicfail","Server music","Couldn't share it ("..tostring(code or"no response")..")")end
 return ok
@@ -785,16 +766,12 @@ local m=tonumber(part:match("(%d+)M"))or 0
 local s=tonumber(part:match("(%d+)S"))or 0
 return days*86400+h*3600+m*60+s
 end
-local Q={}
 local onQuota
 local function apiError(d)local e=d.error
 local reason=""if type(e)=="table"and type(e.errors)=="table"and type(e.errors[1])=="table"then reason=tostring(e.errors[1].reason or"")end
 local msg=tostring(type(e)=="table"and e.message or e)local low=(reason.." "..msg):lower()
 if low:find("quota",1,true)or low:find("dailylimit",1,true)then
-if not M.quiet then
-Q.t=os.clock()
-if onQuota then pcall(onQuota)end
-end
+if onQuota and not M.quiet then pcall(onQuota)end
 return"the daily search limit is used up (see the help box)"end
 if low:find("keyinvalid",1,true)or low:find("api key not valid",1,true)or low:find("api_key_invalid",1,true)then
 return"that YouTube key isn't valid. Check that you copied all of it"end
@@ -871,102 +848,11 @@ if not token then break end
 end
 return out
 end
-local PS={file=CACHE.."/music_plsongs_"..ME..".json",songs={},busy={}}
-pcall(function()
-if isfile and readfile and isfile(PS.file)then
-local d=HttpService:JSONDecode(readfile(PS.file))
-for id,arr in pairs(d)do
-if type(id)=="string"and type(arr)=="table"then
-local list={}
-for _,v in ipairs(arr)do
-if type(v)=="table"and type(v[1])=="string"and type(v[2])=="string"and validId(v[1])then
-list[#list+1]={id=v[1],title=v[2],len=0,channel="",low=v[2]:lower()}
-end
-end
-PS.songs[id]=list
-end
-end
-end
-end)
-function PS.save()
-pcall(function()
-if writefile then
-local d={}
-for id,list in pairs(PS.songs)do
-local arr={}
-for i,v in ipairs(list)do arr[i]={v.id,v.title}end
-d[id]=arr
-end
-writefile(PS.file,HttpService:JSONEncode(d))
-end
-end)
-end
-function PS.fetch(id)
-local out={}
-local token
-for _=1,4 do
-local url="https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&maxResults=50&playlistId="..enc(id).."&key="..enc(YT_KEY)
-if token then url=url.."&pageToken="..enc(token)end
-local d=jsonOf(getBody(url)or"")
-if not d then return nil,"no response"end
-if d.error then return nil,apiError(d)end
-for _,it in ipairs(d.items or{})do
-local sn=it.snippet
-local vid=sn and sn.resourceId and sn.resourceId.videoId
-local title=sn and sn.title
-if validId(vid)and type(title)=="string"and title~="Private video"and title~="Deleted video"then
-out[#out+1]={id=vid,title=cut(clean(title),80),len=0,channel="",low=title:lower()}
-end
-end
-token=d.nextPageToken
-if not token then break end
-end
-return out
-end
-function PS.sync(pl,force)
-if PS.songs[pl.id]and not force or PS.busy[pl.id]or YT_KEY==""then return end
-PS.busy[pl.id]=true
-task.spawn(function()
-M.quiet=true
-local list,err=PS.fetch(pl.id)
-M.quiet=false
-PS.busy[pl.id]=nil
-if not V.alive then return end
-if list then
-PS.songs[pl.id]=list
-PS.save()
-end
-if PS.onChange then pcall(PS.onChange,err)end
-end)
-end
-local SD={file=CACHE.."/music_saved_"..ME..".json",list={},max=100}
-pcall(function()
-if isfile and readfile and isfile(SD.file)then
-local d=HttpService:JSONDecode(readfile(SD.file))
-for _,v in ipairs(d)do
-if type(v)=="table"and type(v.id)=="string"and v.id:match("^[%w_%-]+$")and#v.id<=20 and type(v.name)=="string"and#SD.list<SD.max then
-SD.list[#SD.list+1]={id=v.id,name=cut(clean(v.name),80),title=type(v.title)=="string"and cut(clean(v.title),80)or nil}
-end
-end
-end
-end)
-function SD.write()
-pcall(function()
-if writefile then writefile(SD.file,HttpService:JSONEncode(SD.list))end
-end)
-end
-function SD.find(id)
-for i,v in ipairs(SD.list)do
-if v.id==id then return i end
-end
-return nil
-end
 local function playQ(q,i)q.i=i
 modPlay(q.items[i])M.q=q
 end
 local function nextQ()local q=M.q
 if not q then return end
-if not M.autoplay then q.skip=nil return end
 local st=M.state
 local over=false
 if q.skip and not st then
@@ -987,122 +873,7 @@ if not isMe()or not q or not q.items[q.i+d]then return end
 playQ(q,q.i+d)end
 local panel
 local P={}local nextToken
-local LIB_URL="https://raw.githubusercontent.com/thedevilondiscord/KabirKiScripts/main/instaMusicX.json"
-local LIB_FILE=CACHE.."/music_library.json"
-local LIB_TS=CACHE.."/music_library_t.txt"
-local LIB_TTL=6*3600
-local GENRE_ORDER={"Indi","Punjabi","Phonk","Angelcore","English"}
-local Lib={genres={},flat={},total=0,skipped=0,state="idle",loading=false,err=nil}
-local function parseLib(raw)
-local d=jsonOf(raw)
-if not d or type(d.categories)~="table"then return nil,"the library file isn't valid JSON"end
-local keys,seen={},{}
-for _,want in ipairs(GENRE_ORDER)do
-for k in pairs(d.categories)do
-if tostring(k):lower()==want:lower()and not seen[k]then keys[#keys+1]=k;seen[k]=true end
-end
-end
-local rest={}
-for k in pairs(d.categories)do if not seen[k]then rest[#rest+1]=k end end
-table.sort(rest,function(a,b)return tostring(a)<tostring(b)end)
-for _,k in ipairs(rest)do keys[#keys+1]=k end
-local genres,flat,total,skipped={},{},0,0
-for _,k in ipairs(keys)do
-local arr=d.categories[k]
-if type(arr)=="table"then
-local songs,dup={},{}
-for _,it in ipairs(arr)do
-local id=type(it)=="table"and type(it.url)=="string"and extractId(it.url)or nil
-local nm=type(it)=="table"and type(it.name)=="string"and trimS(it.name)or nil
-if id and validId(id)and nm and nm~=""and not dup[id]then
-dup[id]=true
-local s={id=id,title=cut(clean(nm),80),len=0,channel=tostring(k),genre=tostring(k),low=nm:lower()}
-songs[#songs+1]=s
-flat[#flat+1]=s
-else
-skipped=skipped+1
-end
-end
-if#songs>0 then genres[#genres+1]={name=tostring(k),songs=songs};total=total+#songs end
-end
-end
-if total==0 then return nil,"no playable songs were found in the library file"end
-return{genres=genres,flat=flat,total=total,skipped=skipped}
-end
-local function loadLib(force)
-if Lib.loading then return end
-Lib.loading=true
-if Lib.onChange then pcall(Lib.onChange)end
-task.spawn(function()
-local raw,fresh,cached
-local t=0
-pcall(function()if isfile(LIB_TS)then t=tonumber(readfile(LIB_TS))or 0 end end)
-pcall(function()if isfile(LIB_FILE)then cached=readfile(LIB_FILE)end end)
-if cached and not force and os.time()-t<LIB_TTL then raw=cached end
-if not raw then
-local body=getBody(LIB_URL)
-if body and#body>200 then raw=body;fresh=true end
-end
-if not raw and cached then raw=cached end
-local lib,err
-if raw then lib,err=parseLib(raw)else err="couldn't download the song library"end
-if not lib and fresh and cached then lib,err=parseLib(cached);fresh=false end
-Lib.loading=false
-if not V.alive then return end
-if lib then
-Lib.genres,Lib.flat,Lib.total,Lib.skipped=lib.genres,lib.flat,lib.total,lib.skipped
-Lib.state="ready"
-Lib.err=nil
-if fresh then pcall(function()if writefile then writefile(LIB_FILE,raw);writefile(LIB_TS,tostring(os.time()))end end)end
-elseif Lib.state~="ready"then
-Lib.state="error"
-Lib.err=err
-end
-if Lib.onChange then pcall(Lib.onChange)end
-end)
-end
-local function searchLib(q)
-q=q:lower()
-local tokens={}
-for w in q:gmatch("%S+")do tokens[#tokens+1]=w end
-if#tokens==0 then return{},0 end
-local pool={}
-local seen={}
-for _,s in ipairs(Lib.flat)do
-if not seen[s.id]then
-seen[s.id]=true
-pool[#pool+1]=s
-end
-end
-for _,pl in ipairs(pls)do
-for _,s in ipairs(PS.songs[pl.id]or{})do
-if not seen[s.id]then
-seen[s.id]=true
-s.channel=pl.name
-pool[#pool+1]=s
-end
-end
-end
-for _,s in ipairs(SD.list)do
-if not seen[s.id]then
-seen[s.id]=true
-local t=s.title or s.name
-pool[#pool+1]={id=s.id,title=t,len=0,channel="Saved",low=t:lower()}
-end
-end
-local out={}
-for _,s in ipairs(pool)do
-local ok=true
-for _,w in ipairs(tokens)do if not s.low:find(w,1,true)then ok=false;break end end
-if ok then out[#out+1]={s=s,sc=s.low:find(q,1,true)and 1 or 2,i=#out+1}end
-end
-table.sort(out,function(a,b)if a.sc~=b.sc then return a.sc<b.sc end return a.i<b.i end)
-local res={}
-for i=1,math.min(#out,60)do res[i]=out[i].s end
-return res,#out
-end
-local renderMode,renderView,renderSaved,renderLib,setMode,openPl,doSearch,showHelp
-local searching=false
+local lastQuery=""local searching=false
 local MIDX=T.hiddenTab or 6
 local backTab=1
 local function closePanel()if V.cur==MIDX and T.showTab then
@@ -1111,611 +882,175 @@ if not b or b==MIDX or b<1 or b>5 then b=1 end
 T.showTab(b)
 end
 end
-local ORANGE_=ORANGE
-local GOLD=Color3.fromRGB(255,200,60)
-local LIBPAGE=40
-local function quotaHit()
-return Q.t~=nil and os.clock()-Q.t<3600
-end
-local function autoNote()
-return M.autoplay and""or" Auto is off, so it stops after each song."
-end
-local function genreByName(n)
-for _,g in ipairs(Lib.genres)do
-if g.name==n then return g end
-end
-return nil
-end
-local function shuffled(songs)
-local t={}
-for i,s in ipairs(songs)do t[i]=s end
-for i=#t,2,-1 do
-local j=math.random(i)
-t[i],t[j]=t[j],t[i]
-end
-return t
-end
-local function clearList()
-for _,c in ipairs(P.list:GetChildren())do
-if c:IsA("GuiObject")and c~=P.more then c:Destroy()end
-end
-P.n=0
-P.stars={}
-P.moreFn=nil
-P.more.Visible=false
-P.list.CanvasPosition=Vector2.new(0,0)
-end
-local function nextOrder()
-P.n+=1
-return P.n
-end
-local function setMore(text,fn)
-if text then
-P.more.Text=text
-P.moreFn=fn
-P.more.Visible=true
-else
-P.moreFn=nil
-P.more.Visible=false
-end
-end
-local function noteRow(text,warn)
-new("TextLabel",{Size=U2n(1,-4,0,0),AutomaticSize=Enum.AutomaticSize.Y,BackgroundColor3=WHITE,BackgroundTransparency=.93,LayoutOrder=nextOrder(),Text=text,Font=T.font,TextSize=11,TextColor3=warn and ORANGE_ or T.mut,TextWrapped=true,TextXAlignment=XAL,TextYAlignment=Enum.TextYAlignment.Top,Parent=P.list},{corner(10),pad(8,10)})
-end
-local function headRow(text,btnText,fn,warn)
-local row=new("Frame",{Size=U2n(1,-4,0,26),BackgroundTransparency=1,LayoutOrder=nextOrder(),Parent=P.list})
-local lw=0
-if btnText then lw=-108 end
-new("TextLabel",{Size=U2n(1,lw,1,0),BackgroundTransparency=1,Text=text,Font=T.fontB,TextSize=11,TextColor3=T.mut,TextWrapped=true,TextTruncate=Enum.TextTruncate.AtEnd,TextXAlignment=XAL,Parent=row})
-if btnText then
-local b=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,0,.5,0),Size=U2o(104,24),BackgroundColor3=warn and ORANGE_ or WHITE,BackgroundTransparency=warn and .55 or .86,Text=btnText,Font=T.fontB,TextSize=11,TextColor3=T.text,AutoButtonColor=false,Parent=row},{corner(12)})
-b.Activated:Connect(fn)
-end
-end
-local function paintStar(b,id)
-local on=SD.find(id)~=nil
-b.Text=on and"★"or"☆"
-b.TextColor3=on and GOLD or T.mut
-end
-local function paintStars()
-for b,id in pairs(P.stars)do
-if b.Parent then paintStar(b,id)else P.stars[b]=nil end
-end
-end
-local function toggleSaved(v)
-local i=SD.find(v.id)
-if i then
-table.remove(SD.list,i)
-SD.write()
-setStatus("Removed from Saved.")
-else
-if#SD.list>=SD.max then
-setStatus("Saved is full ("..SD.max.." songs). Tap a star in the Saved tab to remove one.")
-return
-end
-local t=cut(clean(v.title or"Untitled"),80)
-SD.list[#SD.list+1]={id=v.id,name=t,title=t}
-SD.write()
-setStatus("Saved \""..cut(t,40).."\". Find it in the Saved tab.")
-end
-paintStars()
-if P.paintTabs then P.paintTabs()end
-if P.mode=="saved"and not P.view then
-local pos=P.list.CanvasPosition
-renderSaved()
-P.list.CanvasPosition=pos
-end
-end
-local function songRow(v,onPlay)
-local cached=isCached(v.id)
-local isLong=(v.len or 0)>LONG_SECONDS
-local card=new("Frame",{Name="Row",Size=U2n(1,-4,0,46),BackgroundColor3=WHITE,BackgroundTransparency=.92,LayoutOrder=nextOrder(),Parent=P.list},{corner(10)})
-new("TextLabel",{Position=U2o(10,3),Size=U2n(1,-104,0,28),BackgroundTransparency=1,Text=v.title,Font=T.fontB,TextSize=12,TextColor3=T.text,TextXAlignment=XAL,TextYAlignment=Enum.TextYAlignment.Center,TextWrapped=true,TextTruncate=Enum.TextTruncate.AtEnd,Parent=card})
-local parts={}
-if v.len and v.len>0 then parts[#parts+1]=fmtTime(v.len)end
-if v.channel and v.channel~=""then parts[#parts+1]=v.channel end
+local function addCard(v,order)local cached=isCached(v.id)local isLong=v.len>LONG_SECONDS
+local card=new("Frame",{Name="Card",Size=U2n(1,-4,0,58),BackgroundColor3=WHITE,BackgroundTransparency=.92,LayoutOrder=order,ZIndex=62,Parent=P.list},{corner(10)})new("TextLabel",{Position=U2o(10,5),Size=U2n(1,-80,0,30),BackgroundTransparency=1,Text=v.title,Font=T.fontB,TextSize=12,TextColor3=T.text,TextXAlignment=XAL,TextYAlignment=Enum.TextYAlignment.Top,TextWrapped=true,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=63,Parent=card})local sub=v.len>0 and fmtTime(v.len)or"length unknown"if v.channel~=""then sub=sub.."  ·  "..v.channel end
 if cached then
-parts[#parts+1]="downloaded"
-elseif isLong then
-parts[#parts+1]="long: slow first load"
+sub=sub.."  ·  saved"elseif isLong then
+sub=sub.."  ·  long: slow first load"end
+new("TextLabel",{Position=U2o(10,38),Size=U2n(1,-80,0,14),BackgroundTransparency=1,Text=sub,Font=T.font,TextSize=11,TextColor3=(isLong and not cached)and ORANGE or T.mut,TextXAlignment=XAL,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=63,Parent=card})local btn=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,-8,.5,0),Size=U2o(56,30),BackgroundColor3=T.accA,BackgroundTransparency=.15,Text="PLAY",Font=T.fontB,TextSize=12,TextColor3=WHITE,AutoButtonColor=false,ZIndex=63,Parent=card},{corner(15)})btn.Activated:Connect(function()modPlay(v)end)end
+local function renderItems(items,append)if not P.list then return end
+if not append then
+for _,c in ipairs(P.list:GetChildren())do
+if c.Name=="Card"then c:Destroy()end
 end
-new("TextLabel",{Position=U2o(10,31),Size=U2n(1,-104,0,12),BackgroundTransparency=1,Text=table.concat(parts,"  ·  "),Font=T.font,TextSize=10,TextColor3=(isLong and not cached)and ORANGE_ or T.mut,TextXAlignment=XAL,TextTruncate=Enum.TextTruncate.AtEnd,Parent=card})
-local star=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,-68,.5,0),Size=U2o(28,30),BackgroundTransparency=1,Text="",Font=T.fontB,TextSize=20,AutoButtonColor=false,Parent=card})
-P.stars[star]=v.id
-paintStar(star,v.id)
-star.Activated:Connect(function()toggleSaved(v)end)
-local btn=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,-8,.5,0),Size=U2o(52,30),BackgroundColor3=T.accA,BackgroundTransparency=.15,Text="PLAY",Font=T.fontB,TextSize=12,TextColor3=WHITE,AutoButtonColor=false,Parent=card},{corner(15)})
-btn.Activated:Connect(onPlay)
-end
-local function listRow(title,sub,buttons)
-local card=new("Frame",{Name="Row",Size=U2n(1,-4,0,46),BackgroundColor3=WHITE,BackgroundTransparency=.9,LayoutOrder=nextOrder(),Parent=P.list},{corner(10),stroke(.9)})
-local used=8
-for i=#buttons,1,-1 do
-local b=buttons[i]
-local btn=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,-used,.5,0),Size=U2o(b.w,30),BackgroundColor3=b.primary and T.accA or WHITE,BackgroundTransparency=b.plain and 1 or(b.primary and .15 or .86),Text=b.text,Font=T.fontB,TextSize=b.plain and 20 or 12,TextColor3=b.primary and WHITE or(b.plain and T.mut or T.text),AutoButtonColor=false,Parent=card},{corner(15)})
-btn.Activated:Connect(b.fn)
-used+=b.w+6
-end
-local th=40
-local ty=3
-if sub then
-th=28
-end
-new("TextLabel",{Position=U2o(10,ty),Size=U2n(1,-(used+8),0,th),BackgroundTransparency=1,Text=title,Font=T.fontB,TextSize=12,TextColor3=T.text,TextXAlignment=XAL,TextYAlignment=Enum.TextYAlignment.Center,TextWrapped=true,TextTruncate=Enum.TextTruncate.AtEnd,Parent=card})
-if sub then
-new("TextLabel",{Position=U2o(10,31),Size=U2n(1,-(used+8),0,12),BackgroundTransparency=1,Text=sub,Font=T.font,TextSize=10,TextColor3=T.mut,TextXAlignment=XAL,TextTruncate=Enum.TextTruncate.AtEnd,Parent=card})
-end
-end
-local function playSingle(v)
-if not isMe()then return end
-playQ({items={v},i=1},1)
-end
-local function playView(view,shuffle)
-if not isMe()then return end
-playQ({items=shuffle and shuffled(view.songs)or view.songs,i=1,name=view.name},1)
-setStatus("Playing \""..cut(view.name,30).."\""..(shuffle and" (shuffled)"or"").."."..autoNote())
-end
-local function closeView()
-P.view=nil
-P.waitPl=nil
-renderMode()
-end
-local function viewHead(view)
-local head=new("Frame",{Size=U2n(1,-4,0,66),BackgroundColor3=WHITE,BackgroundTransparency=.9,LayoutOrder=nextOrder(),Parent=P.list},{corner(10)})
-local back=new("TextButton",{Position=U2o(6,6),Size=U2o(30,26),BackgroundColor3=WHITE,BackgroundTransparency=.88,Text="‹",Font=T.fontB,TextSize=20,TextColor3=T.text,AutoButtonColor=false,Parent=head},{corner(12)})
-back.Activated:Connect(closeView)
-new("TextLabel",{Position=U2o(42,6),Size=U2n(1,-48,0,26),BackgroundTransparency=1,Text=view.name.."  ·  "..#view.songs.." songs",Font=T.fontB,TextSize=13,TextColor3=T.text,TextXAlignment=XAL,TextTruncate=Enum.TextTruncate.AtEnd,Parent=head})
-local all=new("TextButton",{Position=U2o(6,36),Size=U2o(100,24),BackgroundColor3=T.accA,BackgroundTransparency=.15,Text="Play all",Font=T.fontB,TextSize=12,TextColor3=WHITE,AutoButtonColor=false,Parent=head},{corner(12)})
-local shuf=new("TextButton",{Position=U2o(112,36),Size=U2o(90,24),BackgroundColor3=WHITE,BackgroundTransparency=.86,Text="Shuffle",Font=T.fontB,TextSize=12,TextColor3=T.text,AutoButtonColor=false,Parent=head},{corner(12)})
-all.Activated:Connect(function()playView(view,false)end)
-shuf.Activated:Connect(function()playView(view,true)end)
-end
-renderView=function()
-local view=P.view
-clearList()
-if not view then return end
-viewHead(view)
-if#view.songs==0 then
-noteRow("No songs in here yet.")
-return
-end
-P.shown=0
-local function more()
-local from=P.shown+1
-local to=math.min(#view.songs,P.shown+LIBPAGE)
-for idx=from,to do
-songRow(view.songs[idx],function()
-if not isMe()then return end
-playQ({items=view.songs,i=idx,name=view.name},idx)
-end)
-end
-P.shown=to
-if to<#view.songs then
-setMore("Load more ("..(#view.songs-to).." left)",more)
-else
-setMore(nil)
-end
-end
-more()
-end
-local function openGenre(name)
-local g=genreByName(name)
-if not g then return end
-P.view={name=g.name,songs=g.songs,lib=true}
-renderView()
-P.layout()
-setStatus("Tap PLAY to start from a song, or tap a star to save it.")
-end
-openPl=function(pl)
-local songs=PS.songs[pl.id]
-if songs then
-P.view={name=pl.name,songs=songs}
-renderView()
-P.layout()
-setStatus("Tap PLAY to start from a song, or tap a star to save it.")
-return
-end
-if YT_KEY==""then
-setStatus("Loading a playlist's songs needs a YouTube key. Tap Key.")
-return
-end
-P.waitPl=pl.id
-setStatus("Loading the song list...")
-PS.sync(pl,true)
-end
-local function ytAction(query)
-if YT_KEY==""then
-return"Needs a key",function()showHelp(false)end,true
-end
-if quotaHit()then
-return"Limit reached",function()showHelp(true)end,true
-end
-return"Search YouTube",function()doSearch(query,nil,true)end,false
-end
-local function drawResults(items,head,query,kind)
-clearList()
-if kind=="lib"then
-local text,fn,warn=ytAction(query)
-headRow(head,text,fn,warn)
-elseif kind=="yt"and#searchLib(query)>0 then
-headRow(head,"Back to library",function()doSearch(query)end)
-else
-headRow(head)
+P.count=0
 end
 for _,v in ipairs(items)do
-songRow(v,function()playSingle(v)end)
+P.count+=1
+addCard(v,P.count)end
+P.more.Visible=nextToken~=nil
 end
-if kind=="yt"and nextToken then
-setMore("Load more",function()doSearch(query,nextToken,true)end)
+local playPlaylist
+local removePlaylist
+local function addPlCard(pl,order)local card=new("Frame",{Name="PCard",Size=U2n(1,-4,0,48),BackgroundColor3=WHITE,BackgroundTransparency=.92,LayoutOrder=order,Visible=P.pl==true,ZIndex=62,Parent=P.list},{corner(10)})new("TextLabel",{Position=U2o(10,4),Size=U2n(1,-110,1,-8),BackgroundTransparency=1,Text=pl.name,Font=T.fontB,TextSize=12,TextColor3=T.text,TextXAlignment=XAL,TextWrapped=true,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=63,Parent=card})local btn=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,-36,.5,0),Size=U2o(56,30),BackgroundColor3=T.accA,BackgroundTransparency=.15,Text="PLAY",Font=T.fontB,TextSize=12,TextColor3=WHITE,AutoButtonColor=false,ZIndex=63,Parent=card},{corner(15)})local del=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,-6,.5,0),Size=U2o(26,30),BackgroundTransparency=1,Text="×",Font=T.fontB,TextSize=20,TextColor3=T.mut,AutoButtonColor=false,ZIndex=63,Parent=card})btn.Activated:Connect(function()playPlaylist(pl)end)del.Activated:Connect(function()removePlaylist(pl)end)end
+local function renderPl()if not P.list then return end
+for _,c in ipairs(P.list:GetChildren())do
+if c.Name=="PCard"then c:Destroy()end
 end
+for i,pl in ipairs(pls)do
+addPlCard(pl,i)end
 end
-local function renderSearch()
-if P.last then
-drawResults(P.last.items,P.last.head,P.last.query,P.last.kind)
-return
-end
-clearList()
-noteRow("Type a song name to search the music library, your playlists and your saved songs.")
-noteRow("Paste a YouTube song link to play any song. Tap a star on a result to save it.")
-if YT_KEY==""then
-noteRow("YouTube search is off here. Library, playlists and links still work. Tap Key to turn it on.",true)
-elseif quotaHit()then
-noteRow("YouTube search is paused today (limit reached). Everything else still works. Tap Key for unlimited searching.",true)
-end
-end
-renderLib=function()
-clearList()
-local txt
-if Lib.loading then
-txt="Updating the library..."
-elseif Lib.state=="ready"then
-txt="Music library  ·  "..Lib.total.." songs"
-elseif Lib.state=="error"then
-txt="Music library unavailable"
-else
-txt="Loading the music library..."
-end
-headRow(txt,"Refresh",function()
-loadLib(true)
-for _,pl in ipairs(pls)do PS.sync(pl,true)end
-end)
-if Lib.state=="error"and#Lib.genres==0 then
-noteRow(tostring(Lib.err or"Couldn't load it")..". Check your connection and press Refresh.",true)
-end
-for _,g in ipairs(Lib.genres)do
-listRow(g.name,#g.songs.." songs",{
-{text="Open",w=50,fn=function()openGenre(g.name)end},
-{text="PLAY",w=48,primary=true,fn=function()playView(g,false)end},
-})
+removePlaylist=function(pl)for i,v in ipairs(pls)do
+if v==pl then
+table.remove(pls,i)break
 end
 end
-local function playPlaylist(pl)
-if not isMe()then return end
-local cached=PS.songs[pl.id]
-if cached and#cached>0 then
-playQ({items=cached,i=1,name=pl.name},1)
-setStatus("Playing \""..cut(pl.name,30).."\" ("..#cached.." songs)."..autoNote())
-return
-end
-if plBusy then return end
+savePl()renderPl()end
+playPlaylist=function(pl)if not isMe()or plBusy then return end
 plBusy=true
-setStatus("Loading playlist...")
-task.spawn(function()
-local items,err=fetchPl(pl.id)
-plBusy=false
+setStatus("Loading playlist...")task.spawn(function()local items,err=fetchPl(pl.id)plBusy=false
 if not V.alive then return end
 if not items then
-setStatus("Couldn't load it: "..tostring(err))
-return
+setStatus("Couldn't load it: "..tostring(err))return
 end
 if#items==0 then
-setStatus("No playable videos in that playlist.")
-return
+setStatus("No playable videos in that playlist.")return
 end
-setStatus("Playing \""..cut(pl.name,30).."\" ("..#items.." songs)."..autoNote())
-playQ({items=items,i=1,name=pl.name},1)
-end)
-end
-local function removePlaylist(pl)
-for i,v in ipairs(pls)do
-if v==pl then
-table.remove(pls,i)
-break
-end
-end
-PS.songs[pl.id]=nil
-PS.save()
-savePl()
-setStatus("Removed \""..cut(pl.name,30).."\".")
-if P.paintTabs then P.paintTabs()end
-renderSaved()
-end
-renderSaved=function()
-clearList()
-if#pls==0 and#SD.list==0 then
-noteRow("Nothing saved yet. Paste a YouTube song or playlist link above and press Save, or tap a star on any song.")
-noteRow("Saved playlists and songs also show up when you search.")
-return
-end
-if#pls>0 then
-headRow("Playlists  ·  "..#pls,"Refresh songs",function()
-for _,pl in ipairs(pls)do PS.sync(pl,true)end
-setStatus("Refreshing playlist songs...")
-end)
-for _,pl in ipairs(pls)do
-local list=PS.songs[pl.id]
-local sub="tap Open to load songs"
-if list then
-sub=#list.." songs"
-elseif PS.busy[pl.id]then
-sub="loading songs..."
-end
-listRow(pl.name,sub,{
-{text="Open",w=46,fn=function()openPl(pl)end},
-{text="PLAY",w=48,primary=true,fn=function()playPlaylist(pl)end},
-{text="×",w=22,plain=true,fn=function()removePlaylist(pl)end},
-})
-end
-end
-if#SD.list>0 then
-headRow("Songs  ·  "..#SD.list)
-for i,s in ipairs(SD.list)do
-local v={id=s.id,title=s.title or s.name,len=0,channel=""}
-songRow(v,function()
-if not isMe()then return end
-local items={}
-for k,x in ipairs(SD.list)do items[k]={id=x.id,title=x.title or x.name,len=0,channel=""}end
-playQ({items=items,i=i,name="Saved"},i)
-end)
-end
-end
-end
-renderMode=function()
-if P.view then
-renderView()
-elseif P.mode=="lib"then
-renderLib()
-elseif P.mode=="saved"then
-renderSaved()
-else
-renderSearch()
-end
-if P.layout then P.layout()end
-end
-setMode=function(mode)
-P.mode=mode
-P.view=nil
-P.waitPl=nil
-for k,b in pairs(P.tabs)do
-local on=k==mode
-b.BackgroundColor3=on and T.accA or WHITE
-b.BackgroundTransparency=on and 0 or .9
-b.TextColor3=on and WHITE or T.text
-end
-P.go.Text=mode=="saved"and"Save"or"Search"
-P.box.PlaceholderText=mode=="saved"and"Paste a YouTube song or playlist link"or"Search a song or paste a link"
-P.box.Text=""
-setStatus("")
-renderMode()
-end
-local function savePlaylist(id)
-if YT_KEY==""then
-setStatus("Saving a playlist needs a YouTube key. Tap Key.")
-return
+setStatus("Playing \""..pl.name.."\" ("..#items.." songs).")playQ({items=items,i=1},1)end)end
+local function savePlaylist(text)local id=plId(text)if not id then
+setStatus("Paste a YouTube playlist link (it has list= in it).")return
 end
 for _,v in ipairs(pls)do
 if v.id==id then
-setStatus("That playlist is already saved.")
-return
+setStatus("That playlist is already saved.")return
 end
 end
 if plBusy then return end
 plBusy=true
-setStatus("Checking playlist...")
-task.spawn(function()
-local name,err=plName(id)
-plBusy=false
+setStatus("Checking playlist...")task.spawn(function()local name,err=plName(id)plBusy=false
 if not V.alive or not panel then return end
 if not name then
-setStatus("Couldn't save it: "..tostring(err))
-return
+setStatus("Couldn't save it: "..tostring(err))return
 end
-pls[#pls+1]={id=id,name=name}
-savePl()
-PS.sync(pls[#pls])
-P.box.Text=""
-setStatus("Saved playlist \""..cut(name,30).."\". Loading its songs...")
-if P.paintTabs then P.paintTabs()end
-if P.mode=="saved"and not P.view then renderSaved()end
+pls[#pls+1]={id=id,name=name}savePl()renderPl()setStatus("Saved \""..name.."\".")end)end
+local SV_FILE=CACHE.."/music_saved_"..ME..".json"local saved={}
+pcall(function()if isfile and readfile and isfile(SV_FILE)then
+local d=HttpService:JSONDecode(readfile(SV_FILE))for _,v in ipairs(d)do
+if type(v)=="table"and type(v.id)=="string"and v.id:match("^[%w_%-]+$")and#v.id<=20 and type(v.name)=="string"and#saved<60 then saved[#saved+1]={id=v.id,name=cut(clean(v.name),40),title=type(v.title)=="string"and cut(clean(v.title),80)or nil}end
+end
+end
 end)
+local function saveSv()pcall(function()if writefile then writefile(SV_FILE,HttpService:JSONEncode(saved))end
+end)end
+local renderSv
+local function addSvCard(s,order)local card=new("Frame",{Name="SCard",Size=U2n(1,-4,0,48),BackgroundColor3=WHITE,BackgroundTransparency=.92,LayoutOrder=order,Visible=P.sv==true,ZIndex=62,Parent=P.list},{corner(10)})
+new("TextLabel",{Position=U2o(10,4),Size=U2n(1,-110,1,-8),BackgroundTransparency=1,Text=s.name,Font=T.fontB,TextSize=12,TextColor3=T.text,TextXAlignment=XAL,TextWrapped=true,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=63,Parent=card})
+local btn=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,-36,.5,0),Size=U2o(56,30),BackgroundColor3=T.accA,BackgroundTransparency=.15,Text="PLAY",Font=T.fontB,TextSize=12,TextColor3=WHITE,AutoButtonColor=false,ZIndex=63,Parent=card},{corner(15)})
+local del=new("TextButton",{AnchorPoint=Vector2.new(1,.5),Position=U2n(1,-6,.5,0),Size=U2o(26,30),BackgroundTransparency=1,Text="×",Font=T.fontB,TextSize=20,TextColor3=T.mut,AutoButtonColor=false,ZIndex=63,Parent=card})
+btn.Activated:Connect(function()if not isMe()then return end
+modPlay({id=s.id,title=s.title or s.name,len=0})end)
+del.Activated:Connect(function()for i,v in ipairs(saved)do
+if v==s then table.remove(saved,i)break end
 end
-local function saveSongLink(id)
-if SD.find(id)then
-setStatus("That song is already saved.")
+saveSv()renderSv()end)end
+renderSv=function()if not P.list then return end
+for _,c in ipairs(P.list:GetChildren())do
+if c.Name=="SCard"then c:Destroy()end
+end
+for i,s in ipairs(saved)do addSvCard(s,i)end
+end
+local function saveSong(box)local text=trimS(box.Text)
+if P.pend then
+local name=cut(clean(text),40)
+if name==""then setStatus("Type a name for the song first, then press Save.")return end
+local id,title=P.pend,P.pendT
+P.pend=nil P.pendT=nil
+box.Text=""box.PlaceholderText="Paste a YouTube link to save"
+for _,v in ipairs(saved)do
+if v.id==id then
+v.name=name if title then v.title=title end
+saveSv()renderSv()setStatus("That song was already saved. Its name is now \""..name.."\".")return
+end
+end
+if#saved>=60 then setStatus("You can save up to 60 songs. Delete one (tap the x) to make room.")return end
+saved[#saved+1]={id=id,name=name,title=title}saveSv()renderSv()setStatus("Saved \""..name.."\". Tap PLAY next to it any time.")
 return
 end
-if#SD.list>=SD.max then
-setStatus("Saved is full ("..SD.max.." songs). Remove one first.")
-return
+local id=extractId(text)
+if not id then setStatus("Paste a YouTube video link first (like https://youtu.be/...), then press Save.")return end
+P.pend=id P.pendT=nil
+box.Text=""box.PlaceholderText="Type a name you like, then press Save"
+setStatus("Got the link! Now type a name you like in the box and press Save again. Tap Search at the top to cancel.")
+task.spawn(function()local d=jsonOf(getBody("https://www.youtube.com/oembed?format=json&url="..enc("https://www.youtube.com/watch?v="..id))or"")
+if not V.alive or not panel or P.pend~=id then return end
+if d and type(d.title)=="string"and d.title~=""then
+P.pendT=cut(clean(d.title),80)
+if trimS(box.Text)==""then box.Text=cut(clean(d.title),40)setStatus("Got the link! The name box has the song's title. Change it to any name you like, then press Save.")end
 end
-setStatus("Saving...")
-task.spawn(function()
-local d=jsonOf(getBody("https://www.youtube.com/oembed?format=json&url="..enc("https://www.youtube.com/watch?v="..id))or"")
-local t="YouTube video"
-if d and type(d.title)=="string"and d.title~=""then t=cut(clean(d.title),80)end
-if not V.alive or not panel then return end
-if not SD.find(id)then
-SD.list[#SD.list+1]={id=id,name=t,title=t}
-SD.write()
-end
-P.box.Text=""
-setStatus("Saved \""..cut(t,40).."\".")
-if P.paintTabs then P.paintTabs()end
-if P.mode=="saved"and not P.view then renderSaved()end
-end)
-end
-local function saveLink(text)
-text=trimS(text)
-if text==""then
-setStatus("Paste a YouTube song or playlist link first.")
-return
-end
-local lid=text:match("[?&]list=([%w_%-]+)")
-if not lid then
-local bare=text:match("^(PL[%w_%-]+)$")
-if bare and#bare>=18 then lid=bare end
-end
-local vid=extractId(text)
-if lid and#lid>=13 and not(vid and lid:sub(1,2)=="RD")then
-savePlaylist(lid)
-return
-end
-if vid then
-saveSongLink(vid)
-return
-end
-setStatus("That doesn't look like a YouTube link. Copy a song or playlist link from YouTube and paste it here.")
-end
-doSearch=function(query,token,forceYT)
-query=trimS(query)
-if searching or query==""then return end
-local low=query:lower()
-if not token and not extractId(query)and low:find("list=",1,true)and(low:find("youtube",1,true)or low:find("youtu.be",1,true))then
-setMode("saved")
-P.box.Text=query
-setStatus("That is a playlist link. Press Save to add it.")
-return
-end
-if not token and not forceYT and not extractId(query)then
-local res,n=searchLib(query)
-if#res>0 then
-nextToken=nil
-local head=n.." found"
-if n>#res then head="Top "..#res.." of "..n end
-P.last={items=res,head=head,query=query,kind="lib"}
-P.view=nil
-drawResults(res,head,query,"lib")
-P.layout()
-setStatus("")
-return
-end
-if quotaHit()or YT_KEY==""then
-P.last=nil
-clearList()
-noteRow("No match for \""..cut(query,30).."\" in the library, your playlists or Saved.")
-if YT_KEY==""then
-noteRow("YouTube search is off here. Tap Key to turn it on, or paste a YouTube link to play any song.",true)
-else
-noteRow("YouTube search is paused today (limit reached). Tap Key for unlimited searching, or paste a YouTube link to play any song.",true)
-end
-P.layout()
-setStatus("")
-return
-end
+end)end
+local function doSearch(query,token)query=trimS(query)if searching or not panel or query==""then return end
+if not token and not extractId(query)and query:lower():find("youtube",1,true)and query:lower():find("list=",1,true)then
+setStatus("That is a playlist link. Tap \"Playlists\" at the top, paste it there and press Save.")return
 end
 searching=true
-setStatus("Searching YouTube...")
-task.spawn(function()
-local items
+setStatus("Searching...")task.spawn(function()local items
 local tokenOut
 local err
-local linked=extractId(query)
-local viaLink=false
+local linked=extractId(query)local viaLink=false
 if linked and not token then
 M.quiet=true
 items,tokenOut,err=lookupVideo(linked)
 M.quiet=false
 if not items then
-items,tokenOut,err=linkFallback(linked)
-viaLink=true
+items,tokenOut,err=linkFallback(linked)viaLink=true
 end
 else
-items,tokenOut,err=searchYT(query,token)
-end
+items,tokenOut,err=searchYT(query,token)end
 searching=false
 if not V.alive or not panel then return end
 if not items then
-if quotaHit()then
-setStatus("YouTube search limit reached. Library, Saved and links still work.")
-else
-setStatus("Search failed: "..tostring(err))
+setStatus("Search failed: "..tostring(err))return
 end
-return
-end
+lastQuery=query
 nextToken=tokenOut
-local active=P.mode=="search"and not P.view
-if token and P.last then
-for _,v in ipairs(items)do P.last.items[#P.last.items+1]=v end
-if active then
-for _,v in ipairs(items)do songRow(v,function()playSingle(v)end)end
-if nextToken then
-setMore("Load more",function()doSearch(query,nextToken,true)end)
-else
-setMore(nil)
-end
-end
-setStatus("")
-return
-end
-local kind="yt"
-local head="YouTube results"
-if viaLink then
-kind="link"
-head="From your link"
-end
-P.last={items=items,head=head,query=query,kind=kind}
-if#items==0 then
-setStatus("No songs of 60 seconds or longer found.")
-end
-if active then
-drawResults(items,head,query,kind)
-P.layout()
-end
-if#items>0 then
-setStatus(viaLink and"Link ready. Press PLAY."or"Tap a star to save a song for later.")
-end
-end)
-end
-refreshPanel=function()
-if not panel or not panel.Parent or not P.now then return end
+renderItems(items,token~=nil)if#items==0 and not token then
+setStatus("No videos of 60 seconds or longer found.")else
+setStatus(viaLink and"Link ready (links don't need a search). Press PLAY to start it for the server."or("Found "..#items..(token and" more."or". Press PLAY to start it for the server.")))end
+end)end
+refreshPanel=function()if not panel or not panel.Parent or not P.now then return end
 local st=M.state
 local cur=M.cur
-P.now.Text=(cur and cur.title~="")and cur.title or"Nothing playing"
-local snd=M.sound
-local text=""
-local ratio=0
+P.now.Text=(cur and cur.title~="")and cur.title or"Nothing playing"local snd=M.sound
+local text=""local ratio=0
 if M.pct then
-text="Downloading "..M.pct.."%"
-ratio=M.pct/100
+text="Downloading "..M.pct.."%"ratio=M.pct/100
 elseif snd and snd.IsLoaded and snd.TimeLength>0 then
-text=fmtTime(snd.TimePosition).." / "..fmtTime(snd.TimeLength)
-ratio=math.clamp(snd.TimePosition/snd.TimeLength,0,1)
-elseif cur then
-text="Loading..."
-end
-if M.q and M.q.items[M.q.i]and#M.q.items>1 and text~=""then text=text.."  ·  "..M.q.i.."/"..#M.q.items end
+text=fmtTime(snd.TimePosition).." / "..fmtTime(snd.TimeLength)ratio=math.clamp(snd.TimePosition/snd.TimeLength,0,1)elseif cur then
+text="Loading..."end
 P.time.Text=text
-P.fill.Size=U2n(ratio,0,1,0)
-P.pause.Text=(st and st.state=="pause")and"Resume"or"Pause"
-P.loop.BackgroundColor3=M.loop and T.accA or WHITE
+P.fill.Size=U2n(ratio,0,1,0)P.pause.Text=(st and st.state=="pause")and"Resume"or"Pause"P.loop.BackgroundColor3=M.loop and T.accA or WHITE
 P.loop.BackgroundTransparency=M.loop and .35 or .88
-P.loop.TextColor3=M.loop and WHITE or T.text
-P.auto.BackgroundColor3=M.autoplay and T.accA or WHITE
-P.auto.BackgroundTransparency=M.autoplay and .35 or .88
-P.auto.TextColor3=M.autoplay and WHITE or T.text
-P.autoNote.Text=M.autoplay and"Auto is on: songs keep playing one after another. Turn it off to play one song at a time."or"Auto is off: each song plays once, then stops. Turn it on to keep going."
 if P.showV then P.showV(M.muted and 0 or M.volume)end
 local line=M.status
 if M.warn~=""then line=(line~=""and(line.."  ")or"")..M.warn end
-P.status.TextColor3=(M.warn~="")and ORANGE or T.mut
-if P.status.Text~=line then
+local tip=false
+if line==""and not P.pl and not P.sv then line="Tip: copy a YouTube video link, paste it in the box above, press Search, then PLAY. You can also type a song name to search."tip=true end
 P.status.Text=line
-if P.layout then P.layout()end
+P.status.TextColor3=(M.warn~="")and ORANGE or(tip and T.accA or T.mut)
 end
-if P.refreshHead then P.refreshHead()end
-end
-local HELP_WHY="<b>YouTube search is paused for today</b>\nYouTube gives this script a limited number of searches every day, shared by everyone using Saiki Rechat. The limit comes back by itself tomorrow. Nothing is broken.\n\n"
-local HELP_WAYS="<b>What still works right now</b>\nSearch still finds songs in the music library, your saved playlists and your saved songs. The Library and Saved tabs work as usual, and pasting a YouTube song link in Search plays it. Links never use up searches.\n\n<b>Want unlimited searching? Use your own key</b>\nA YouTube API key is like your own free ticket for searching. It gives you your own daily limit that nobody else uses. How to get one on your phone:\n1. Open Chrome and go to console.cloud.google.com and sign in with your Google account. If the page looks tiny or odd, tap the three-dot menu and turn on \"Desktop site\".\n2. Tap the project name at the top, then New Project. Pick any name and tap Create. Wait a few seconds, then select your new project.\n3. Open the menu (three lines), tap APIs &amp; Services, then Library. Search for YouTube Data API v3, open it and tap Enable.\n4. Go back to APIs &amp; Services, then Credentials. Tap Create credentials, then API key. Your key appears. Tap the copy button.\n5. Paste the key in the box below and press Save.\n\nKeep your key private, like a password. It is saved only on your device. To go back to the shared key, clear the box and press Save."
+local HELP_WHY="<b>Why can't I search right now?</b>\nYouTube gives this script a limited number of searches every day, and everyone who uses Saiki Rechat shares them. Lots of people were searching today, so the limit ran out. Nothing is broken! The limit comes back by itself tomorrow.\n\n"
+local HELP_WAYS="<b>Two ways to play music</b>\n\n<b>Way 1: Paste a link (easiest)</b>\nOpen YouTube, find your song, tap Share, then Copy link. Come back here, paste it in the box that says \"Paste YouTube link here\" and press Search. Then press PLAY. Links never use up searches, so this always works.\n\n<b>Way 2: Use your own YouTube key</b>\nA YouTube API key is like your own free ticket for searching. It gives you your own daily limit that nobody else uses. How to get one on your phone:\n1. Open Chrome and go to console.cloud.google.com and sign in with your Google account. If the page looks tiny or odd, tap the three-dot menu and turn on \"Desktop site\".\n2. Tap the project name at the top, then New Project. Pick any name and tap Create. Wait a few seconds, then select your new project.\n3. Open the menu (three lines), tap APIs &amp; Services, then Library. Search for YouTube Data API v3, open it and tap Enable.\n4. Go back to APIs &amp; Services, then Credentials. Tap Create credentials, then API key. Your key appears. Tap the copy button.\n5. Paste the key in the box below and press Save.\n\nKeep your key private, like a password. It is saved only on your device. To go back to the shared key, clear the box and press Save."
+local showHelp
 showHelp=function(quota)if not panel then return end
 if P.help then P.help:Destroy()P.help=nil end
 local h=new("Frame",{Name="Help",Size=U2n(1,0,1,0),BackgroundColor3=T.bg,BackgroundTransparency=0,ZIndex=80,Parent=panel},{corner(16)})P.help=h
@@ -1754,15 +1089,9 @@ YT_KEY=old
 ks.Text="That key didn't work: "..tostring(err)return
 end
 M.userKey=t
-Q.t=nil
-savePrefs()
-if P.refreshHead then P.refreshHead()end
-kb.Text=""ks.Text="Done! Your key works and is saved on this device. Close this box and search again."setStatus("")end)end
+savePrefs()kb.Text=""ks.Text="Done! Your key works and is saved on this device. Close this box and search again."setStatus("")end)end
 sv.Activated:Connect(saveKey)kb.FocusLost:Connect(function(enter)if enter then saveKey()end end)end
-onQuota=function()
-if panel then showHelp(true)end
-if P.refreshHead then P.refreshHead()end
-end
+onQuota=function()if panel then showHelp(true)end end
 local function buildPage()
 local pg=new("Frame",{Name="SaikiMusicPage",Size=U2s(1,1),BackgroundTransparency=1,Visible=false,Parent=container})
 pages[MIDX]=pg
@@ -1770,99 +1099,37 @@ panel=pg
 local back=new("TextButton",{Position=U2o(14,4),Size=U2o(34,32),BackgroundColor3=WHITE,BackgroundTransparency=.92,Text="‹",Font=T.fontB,TextSize=22,TextColor3=T.text,AutoButtonColor=false,Parent=pg},{corner(12)})
 back.Activated:Connect(closePanel)
 new("TextLabel",{Position=U2o(56,2),Size=U2o(220,20),BackgroundTransparency=1,Text="Music",Font=T.fontB,TextSize=17,TextColor3=T.text,TextXAlignment=XAL,Parent=pg})
-local subLbl=new("TextLabel",{Position=U2o(56,22),Size=U2o(300,14),BackgroundTransparency=1,Text="Plays for everyone in this server who runs Saiki Rechat",Font=T.font,TextSize=11,TextColor3=T.mut,TextXAlignment=XAL,Parent=pg})
-P.keyBtn=new("TextButton",{AnchorPoint=Vector2.new(1,0),Position=U2n(1,-14,0,6),Size=U2o(70,28),BackgroundColor3=WHITE,BackgroundTransparency=.9,Text="YT Key",Font=T.fontB,TextSize=12,TextColor3=T.text,AutoButtonColor=false,Parent=pg},{corner(14)})
-P.keyBtn.Activated:Connect(function()showHelp(false)end)
-local tabRow=new("Frame",{Position=U2o(14,44),Size=U2o(262,28),BackgroundTransparency=1,Parent=pg},{new("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,5)})})
-P.tabs={}
-for i,def in ipairs({{"search","Search"},{"lib","Library"},{"saved","Saved"}})do
-P.tabs[def[1]]=new("TextButton",{Size=U2o(84,28),LayoutOrder=i,BackgroundColor3=WHITE,BackgroundTransparency=.9,Text=def[2],Font=T.fontB,TextSize=12,TextColor3=T.text,AutoButtonColor=false,Parent=tabRow},{corner(14)})
-P.tabs[def[1]].Activated:Connect(function()setMode(def[1])end)
-end
-P.inputRow=new("Frame",{Position=U2o(14,78),Size=U2o(262,32),BackgroundTransparency=1,Parent=pg})
-P.box=new("TextBox",{Size=U2o(186,32),BackgroundColor3=WHITE,BackgroundTransparency=.9,PlaceholderText="Search a song or paste a link",PlaceholderColor3=T.mut,Text="",TextColor3=T.text,TextSize=13,Font=T.font,ClearTextOnFocus=false,TextXAlignment=XAL,TextTruncate=Enum.TextTruncate.AtEnd,Parent=P.inputRow},{corner(12),pad(0,10)})
-P.go=new("TextButton",{Position=U2o(192,0),Size=U2o(70,32),BackgroundColor3=T.accA,BackgroundTransparency=.1,Text="Search",Font=T.fontB,TextSize=13,TextColor3=WHITE,AutoButtonColor=false,Parent=P.inputRow},{corner(12)})
-P.status=new("TextLabel",{Position=U2o(14,114),Size=U2o(262,0),BackgroundTransparency=1,TextWrapped=true,TextTruncate=Enum.TextTruncate.AtEnd,Visible=false,Text="",Font=T.font,TextSize=11,TextColor3=T.mut,TextXAlignment=XAL,TextYAlignment=Enum.TextYAlignment.Top,Parent=pg})
-P.list=new("ScrollingFrame",{Position=U2o(14,114),Size=U2o(262,196),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,ScrollBarImageColor3=T.mut,CanvasSize=U2n(),AutomaticCanvasSize=Enum.AutomaticSize.Y,Parent=pg},{new("UIListLayout",{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder})})
-P.n=0
-P.stars={}
+new("TextLabel",{Position=U2o(56,22),Size=U2o(300,14),BackgroundTransparency=1,Text="Plays for everyone in this server who runs Saiki Rechat",Font=T.font,TextSize=11,TextColor3=T.mut,TextXAlignment=XAL,Parent=pg})
+local keyBtn=new("TextButton",{AnchorPoint=Vector2.new(1,0),Position=U2n(1,-14,0,6),Size=U2o(70,28),BackgroundColor3=WHITE,BackgroundTransparency=.9,Text="YT Key",Font=T.fontB,TextSize=12,TextColor3=T.text,AutoButtonColor=false,Parent=pg},{corner(14)})
+keyBtn.Activated:Connect(function()showHelp(false)end)
+
+local modeRow=new("Frame",{Position=U2o(14,44),Size=U2o(262,28),BackgroundTransparency=1,Parent=pg},{new("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6)})})
+local modeBtns={}
+local box=new("TextBox",{Position=U2o(14,78),Size=U2o(186,34),BackgroundColor3=WHITE,BackgroundTransparency=.9,PlaceholderText="Paste YouTube link or search a song",PlaceholderColor3=T.mut,Text="",TextColor3=T.text,TextSize=13,Font=T.font,ClearTextOnFocus=false,TextXAlignment=XAL,TextTruncate=Enum.TextTruncate.AtEnd,Parent=pg},{corner(12),pad(0,10)})
+local go=new("TextButton",{Position=U2o(206,78),Size=U2o(70,34),BackgroundColor3=T.accA,BackgroundTransparency=.1,Text="Search",Font=T.fontB,TextSize=13,TextColor3=WHITE,AutoButtonColor=false,Parent=pg},{corner(12)})
+P.status=new("TextLabel",{Position=U2o(14,116),Size=U2o(262,30),BackgroundTransparency=1,TextWrapped=true,Text="",Font=T.font,TextSize=11,TextColor3=T.mut,TextXAlignment=XAL,TextYAlignment=Enum.TextYAlignment.Top,Parent=pg})
+P.list=new("ScrollingFrame",{Position=U2o(14,148),Size=U2o(262,162),BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=3,ScrollBarImageColor3=T.mut,CanvasSize=U2n(),AutomaticCanvasSize=Enum.AutomaticSize.Y,Parent=pg},{new("UIListLayout",{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder})})
+P.count=0
 P.more=new("TextButton",{Name="More",Size=U2n(1,-4,0,32),LayoutOrder=100000,BackgroundColor3=WHITE,BackgroundTransparency=.9,Text="Load more",Font=T.fontB,TextSize=12,TextColor3=T.text,AutoButtonColor=false,Visible=false,Parent=P.list},{corner(16)})
-P.layout=function()
-local y=78
-local showInput=P.mode~="lib"and not P.view
-P.inputRow.Visible=showInput
-if showInput then y=114 end
-local t=P.status.Text
-local sh=0
-if t~=""then sh=math.min(3,math.ceil(#t/42))*13 end
-P.status.Visible=sh>0
-P.status.Position=U2o(14,y)
-P.status.Size=U2o(262,sh)
-if sh>0 then y+=sh+4 end
-P.list.Position=U2o(14,y)
-P.list.Size=U2o(262,310-y)
-end
-P.paintTabs=function()
-local n=#SD.list+#pls
-P.tabs.saved.Text=n>0 and("Saved "..n)or"Saved"
-end
-P.refreshHead=function()
-local warn=YT_KEY==""or quotaHit()
-P.keyBtn.BackgroundColor3=warn and ORANGE or WHITE
-P.keyBtn.BackgroundTransparency=warn and .55 or .9
-end
+
 local card=new("Frame",{Position=U2o(290,44),Size=U2o(171,266),BackgroundColor3=WHITE,BackgroundTransparency=.93,Parent=pg},{corner(16),stroke(.9)})
-local cover=new("Frame",{Position=U2o(10,10),Size=U2o(56,56),BackgroundColor3=WHITE,Parent=card},{corner(14),grad(35)})
-new("TextLabel",{Size=U2s(1,1),BackgroundTransparency=1,Text="♪",Font=Enum.Font.GothamBlack,TextSize=30,TextColor3=WHITE,Parent=cover})
-P.now=new("TextLabel",{Position=U2o(74,10),Size=U2o(87,56),BackgroundTransparency=1,Text="Nothing playing",Font=T.fontB,TextSize=12,TextColor3=T.text,TextWrapped=true,TextXAlignment=XAL,TextYAlignment=Enum.TextYAlignment.Center,TextTruncate=Enum.TextTruncate.AtEnd,Parent=card})
-P.time=new("TextLabel",{Position=U2o(10,74),Size=U2o(151,14),BackgroundTransparency=1,Text="",Font=T.font,TextSize=11,TextColor3=T.mut,TextXAlignment=XAL,Parent=card})
-local track=new("Frame",{Position=U2o(12,92),Size=U2o(147,5),BackgroundColor3=WHITE,BackgroundTransparency=.8,Parent=card},{corner(3)})
+local cover=new("Frame",{Position=U2o(37,12),Size=U2o(96,96),BackgroundColor3=WHITE,Parent=card},{corner(20),grad(35)})
+new("TextLabel",{Size=U2s(1,1),BackgroundTransparency=1,Text="♪",Font=Enum.Font.GothamBlack,TextSize=48,TextColor3=WHITE,Parent=cover})
+P.now=new("TextLabel",{Position=U2o(10,114),Size=U2o(151,32),BackgroundTransparency=1,Text="Nothing playing",Font=T.fontB,TextSize=13,TextColor3=T.text,TextWrapped=true,TextTruncate=Enum.TextTruncate.AtEnd,Parent=card})
+P.time=new("TextLabel",{Position=U2o(10,148),Size=U2o(151,14),BackgroundTransparency=1,Text="",Font=T.font,TextSize=11,TextColor3=T.mut,Parent=card})
+local track=new("Frame",{Position=U2o(12,166),Size=U2o(147,5),BackgroundColor3=WHITE,BackgroundTransparency=.8,Parent=card},{corner(3)})
 P.fill=new("Frame",{Size=U2n(0,0,1,0),BackgroundColor3=T.accA,BorderSizePixel=0,Parent=track},{corner(3)})
 local function cbtn(x,y,w,text)return new("TextButton",{Position=U2o(x,y),Size=U2o(w,28),BackgroundColor3=WHITE,BackgroundTransparency=.88,Text=text,Font=T.fontB,TextSize=12,TextColor3=T.text,AutoButtonColor=false,Parent=card},{corner(14)})end
-cbtn(10,108,45,"«").Activated:Connect(function()skipQ(-1)end)
-P.pause=cbtn(63,108,45,"Pause")
-cbtn(116,108,45,"»").Activated:Connect(function()skipQ(1)end)
-local stopBtn=cbtn(10,142,45,"Stop")
-P.loop=cbtn(63,142,45,"Loop")
-P.auto=cbtn(116,142,45,"Auto")
-P.autoNote=new("TextLabel",{Position=U2o(10,206),Size=U2o(151,50),BackgroundTransparency=1,TextWrapped=true,Text="",Font=T.font,TextSize=10,TextColor3=T.mut,TextXAlignment=XAL,TextYAlignment=Enum.TextYAlignment.Top,Parent=card})
-P.auto.Activated:Connect(function()
-M.autoplay=not M.autoplay
-savePrefs()
-setStatus(M.autoplay and"Auto is on: songs play one after another."or"Auto is off: each song plays once and stops.")
-end)
+cbtn(10,180,45,"«").Activated:Connect(function()skipQ(-1)end)
+P.pause=cbtn(63,180,45,"Pause")
+cbtn(116,180,45,"»").Activated:Connect(function()skipQ(1)end)
+local stopBtn=cbtn(10,214,71,"Stop")
+P.loop=cbtn(90,214,71,"Loop")
 P.pause.Activated:Connect(modPause)
 stopBtn.Activated:Connect(modStop)
 P.loop.Activated:Connect(modLoop)
-P.scope=new("TextButton",{Position=U2o(112,2),Size=U2o(124,20),BackgroundColor3=WHITE,BackgroundTransparency=.88,Text="Scope: Server",Font=T.fontB,TextSize=11,TextColor3=T.mut,AutoButtonColor=false,Visible=(T.isMod and T.isMod(ME))==true,Parent=pg},{corner(10)})
-local function paintScope()local on=M.global==true
-P.scope.Text=on and"Scope: Global"or"Scope: Server"
-P.scope.BackgroundColor3=on and T.accA or WHITE
-P.scope.BackgroundTransparency=on and .35 or .88
-P.scope.TextColor3=on and WHITE or T.mut
-subLbl.Text=on and"Plays for everyone in ALL servers who run Saiki Rechat"or"Plays for everyone in this server who runs Saiki Rechat"
-end
-P.scope.Activated:Connect(function()if not(T.isMod and T.isMod(ME))then return end
-M.global=not(M.global==true)paintScope()
-if M.global then
-setStatus("Global: your music now plays in every server.")
-local cs=M.state if cs and cs.by==ME and(cs.state=="play"or cs.state=="pause")then task.spawn(write,nodeOf(cs,cs.state))end
-else
-setStatus("Server: your music plays only in this server.")
-if M.gOwn then
-M.gOwn=false
-task.spawn(function()
-M.pending+=1
-pcall(T.dmId)
-dbRequest("PUT",GNODE,stopBody(),dmAuth,DM_FIREBASE_DB)
-M.pending-=1
-M.lastWrite=os.clock()
-end)
-end
-end
-end)
 
-local vrow=new("TextButton",{Position=U2o(10,176),Size=U2o(151,18),BackgroundTransparency=1,Text="",AutoButtonColor=false,Parent=card})
+local vrow=new("TextButton",{Position=U2o(10,246),Size=U2o(151,18),BackgroundTransparency=1,Text="",AutoButtonColor=false,Parent=card})
 local vlbl=new("TextLabel",{Size=U2o(52,18),BackgroundTransparency=1,Font=T.fontB,TextSize=11,TextColor3=T.text,TextXAlignment=XAL,Parent=vrow})
 local vtrack=new("Frame",{AnchorPoint=Vector2.new(0,.5),Position=U2n(0,56,.5,0),Size=U2n(1,-56,0,5),BackgroundColor3=WHITE,BackgroundTransparency=.8,Parent=vrow},{corner(3)})
 local vfill=new("Frame",{Size=U2s(0,1),BackgroundColor3=T.accA,BorderSizePixel=0,Parent=vtrack},{corner(3)})
@@ -1879,44 +1146,44 @@ vrow.InputEnded:Connect(function(i)local t=i.UserInputType
 if drag and(t==Enum.UserInputType.MouseButton1 or t==Enum.UserInputType.Touch)then drag=false;pickV(i,true)end
 end)
 P.showV(M.muted and 0 or M.volume)
-P.more.Activated:Connect(function()if P.moreFn then P.moreFn()end end)
-local function submit()
-if P.mode=="saved"then
-saveLink(P.box.Text)
-else
-nextToken=nil
-doSearch(P.box.Text)
+
+local function setMode(mode)P.pl=mode=="pl"
+P.sv=mode=="saved"P.pend=nil P.pendT=nil
+for k,b in pairs(modeBtns)do
+local on=(k==mode)
+b.BackgroundColor3=on and T.accA or WHITE
+b.BackgroundTransparency=on and 0 or .9
+b.TextColor3=on and WHITE or T.text
 end
+go.Text=(P.pl or P.sv)and"Save"or"Search"
+box.PlaceholderText=P.pl and"Paste a playlist link to save"or(P.sv and"Paste a YouTube link to save"or"Paste YouTube link or search a song")
+box.Text=""
+for _,c in ipairs(P.list:GetChildren())do
+if c.Name=="Card"then c.Visible=not P.pl and not P.sv
+elseif c.Name=="PCard"then c.Visible=P.pl==true
+elseif c.Name=="SCard"then c.Visible=P.sv==true end
 end
-P.go.Activated:Connect(submit)
-P.box.FocusLost:Connect(function(enter)if enter then submit()end end)
-Lib.onChange=function()
-if P.view and P.view.lib and not genreByName(P.view.name)then P.view=nil end
-if P.mode=="lib"and not P.view then renderLib()end
-if P.layout then P.layout()end
-if refreshPanel then refreshPanel()end
+P.more.Visible=not P.pl and not P.sv and nextToken~=nil
+if P.pl then
+setStatus(#pls==0 and"No saved playlists yet. Paste a YouTube playlist link above and press Save."or"Press PLAY to play a saved playlist for the server.")
+elseif P.sv then
+setStatus(#saved==0 and"Save your favorite songs here. Paste a YouTube video link above, press Save, then give it a name you like."or"Tap PLAY to play a saved song for the server. To save another, paste a link above and press Save.")
+else setStatus("")end
 end
-PS.onChange=function(err)
-if not panel then return end
-if err then setStatus("Couldn't load playlist songs: "..tostring(err))end
-if P.waitPl then
-local id=P.waitPl
-P.waitPl=nil
-for _,pl in ipairs(pls)do
-if pl.id==id and PS.songs[id]then
-openPl(pl)
-return
+for i,def in ipairs({{"search","Search"},{"saved","Saved"},{"pl","Playlists"}})do
+modeBtns[def[1]]=new("TextButton",{Size=U2o(83,28),LayoutOrder=i,BackgroundColor3=WHITE,BackgroundTransparency=.9,Text=def[2],Font=T.fontB,TextSize=12,TextColor3=T.text,AutoButtonColor=false,Parent=modeRow},{corner(14)})
+modeBtns[def[1]].Activated:Connect(function()setMode(def[1])end)
 end
+P.more.Activated:Connect(function()doSearch(lastQuery,nextToken)end)
+local function submit()if P.sv then saveSong(box)
+elseif P.pl then savePlaylist(box.Text)
+else nextToken=nil;doSearch(box.Text)end
 end
-end
-if P.mode=="saved"and not P.view then renderSaved()end
-end
-P.mode="search"
-P.paintTabs()
+go.Activated:Connect(submit)
+box.FocusLost:Connect(function(enter)if enter then submit()end end)
+renderPl()renderSv()
 setMode("search")
 refreshPanel()
-loadLib(false)
-for _,pl in ipairs(pls)do PS.sync(pl)end
 end
 buildPage()
 local function openMusic()if not isMe()then return end
@@ -1973,31 +1240,12 @@ return out
 end
 local function poll()local t0=os.clock()local ok,d=dbRequest("GET",NODE,nil,auth,FIREBASE_DB)if not ok then return end
 if M.pending>0 or t0<M.lastWrite then return end
-M.gTick=(M.gTick or 0)+1
-if M.gTick%2==1 then
-pcall(T.dmId)
-local okG,gAll=dbRequest("GET","/global/music",nil,dmAuth,DM_FIREBASE_DB)
-if okG then
-local best
-if type(gAll)=="table"then
-for who,rec in pairs(gAll)do
-if type(rec)=="table"and tostring(who)~=ME and tostring(rec.by)==tostring(who)and T.isMod and T.isMod(who)then
-if not best or(tonumber(rec.at)or 0)>(tonumber(best.at)or 0)then best=rec end
-end
-end
-end
-M.gData=best
-end
-end
-local g=M.gData
-local useG=type(g)=="table"and(tonumber(g.at)or 0)>(type(d)=="table"and tonumber(d.at)or 0)
-applyState(useG and g or d)end
+applyState(d)end
 task.spawn(function()while V.alive do
 if fsOk()then pcall(poll)end
 task.wait(3)end
 end)task.spawn(function()while V.alive do
 pcall(function()musicBtn.Visible=isMe()==true
-if P.scope then P.scope.Visible=(T.isMod and T.isMod(ME))==true end
 musicBtn.Position=musicBtnPos()
 if not isMe()and V.cur==MIDX then closePanel()end end)pcall(syncSound)pcall(nextQ)pcall(function()if refreshPanel then refreshPanel()end end)pcall(function()if updateCard then updateCard()end end)task.wait(1)end
 end)conns[#conns+1]={Disconnect=function()M.gen+=1
@@ -2291,50 +1539,3 @@ slides[1].Visible=true
 idx=1
 refreshBar()if animOn()then tween(stage,.3,{GroupTransparency=0})end
 end)end)()
-;(function()
-local seen,primed,lastSend={},false,0
-local function waitMods()local w=0
-while V.alive and not(T.modsReady and T.modsReady())and w<20 do task.wait(1)w+=1 end
-return T.modsReady and T.modsReady()
-end
-local function show(who,rec,silent)local body=clean(tostring(rec.txt or""))if body==""then return end
-task.spawn(function()if not waitMods()then return end
-if not(T.isMod and T.isMod(who))then return end
-local p=Players:GetPlayerByUserId(tonumber(who)or 0)
-local name=p and p.DisplayName or cut(clean(tostring(rec.dn or"")),40)
-if name==""then name="Moderator"end
-if T.showGlobalAnc then T.showGlobalAnc(name,cut(body,300),who,silent==true)end
-end)
-end
-function T.globalAncSend(text)if not(V.REQUEST and T.isMod and T.isMod(ME))then return false,"not allowed"end
-if os.clock()-lastSend<5 then return false,"cooldown"end
-lastSend=os.clock()
-pcall(T.dmId)
-local n=os.time()*1000+math.random(0,999)
-local body={n=n,dn=cut(LP.DisplayName,40),txt=cut(text,CONFIG.MAX_LEN or 200),ts=SV}
-local ok,_,raw,code=dbRequest("PUT","/global/anc/"..ME,body,dmAuth,DM_FIREBASE_DB)
-if ok then seen[ME..":"..n]=true show(ME,{txt=body.txt,dn=LP.DisplayName},false)return true end
-return false,code,raw
-end
-task.spawn(function()while V.alive do
-if V.REQUEST then pcall(function()
-pcall(T.dmId)
-local ok,data=dbRequest("GET","/global/anc",nil,dmAuth,DM_FIREBASE_DB)if not ok then return end
-local first=not primed
-primed=true
-if type(data)=="table"then
-for who,rec in pairs(data)do
-if type(rec)=="table"and tonumber(rec.n)then
-local key=tostring(who)..":"..tostring(rec.n)
-if not seen[key]then
-seen[key]=true
-if not first and tostring(who)~=ME then show(tostring(who),rec,false)end
-end
-end
-end
-end
-end)end
-task.wait(4)
-end
-end)
-end)()
