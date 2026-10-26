@@ -1,0 +1,591 @@
+-- Saiki Rechat plugin: Settings tab
+-- SOURCE file. Obfuscate it with Ker0 (like the main script), then upload the obfuscated result to GitHub as SaikiRechat_Settings.lua
+-- (folder = CONFIG.PLUGIN_BASE). The main script downloads it with game:HttpGet() and runs it with loadstring().
+local H = ... or (getgenv and getgenv() or _G).SaikiRechatPlugin
+-- Defensive startup: do not let this plugin initialize twice on the same Rechat instance.
+if type(H) ~= "table" or type(H.T) ~= "table" or type(H.onDestroy) ~= "function" then
+	warn("[SAIKI RECHAT] Settings plugin skipped: shared plugin API is unavailable.")
+	return
+end
+local _loadedPlugins = H._loadedPlugins
+if type(_loadedPlugins) ~= "table" then
+	_loadedPlugins = {}
+	H._loadedPlugins = _loadedPlugins
+end
+if _loadedPlugins.Settings then
+	return
+end
+_loadedPlugins.Settings = true
+H.onDestroy(function()
+	_loadedPlugins.Settings = nil
+end)
+local T, gui, win, container, pages, winScale = H.T, H.gui, H.win, H.container, H.pages, H.winScale
+local new, corner, stroke, grad, tween, toast, bind = H.new, H.corner, H.stroke, H.grad, H.tween, H.toast, H.bind
+local newScroll, addHeader, fitScale, CONFIG = H.newScroll, H.addHeader, H.fitScale, H.CONFIG
+local WHITE = Color3.new(1, 1, 1)
+local HttpService = game:GetService("HttpService")
+local UserInputService = game:GetService("UserInputService")
+local TextService = game:GetService("TextService")
+local RunService = game:GetService("RunService")
+local DISCORD, DISCORD_CODE = "https://discord.gg/63eEChZ6YU", "63eEChZ6YU"
+local INK2 = Color3.fromRGB(15, 17, 25)
+
+---------------------------------------------------------------- saved settings
+local FILE = H.cache .. "/settings_" .. H.me .. ".json"
+local MAXMSG = CONFIG.MAX_MESSAGES
+local WHITEC = Color3.new(1, 1, 1)
+local function mk(bg, accA, accB, light)
+	local t = { bg = bg, accA = accA, accB = accB, text = Color3.fromRGB(240, 242, 250), mut = Color3.fromRGB(150, 156, 175), ov = WHITEC, bgT = 0.2 }
+	if light then for k, v in pairs(light) do t[k] = v end end
+	return t
+end
+local THEMES = {
+	Dark   = mk(Color3.fromRGB(14, 16, 24), Color3.fromRGB(124, 92, 255), Color3.fromRGB(64, 180, 255)),
+	AMOLED = mk(Color3.fromRGB(0, 0, 0),    Color3.fromRGB(140, 100, 255), Color3.fromRGB(70, 190, 255)),
+	Ocean  = mk(Color3.fromRGB(8, 20, 32),  Color3.fromRGB(0, 140, 255),   Color3.fromRGB(0, 220, 200)),
+	Sunset = mk(Color3.fromRGB(26, 14, 20), Color3.fromRGB(255, 100, 110), Color3.fromRGB(255, 176, 64)),
+	Forest = mk(Color3.fromRGB(10, 22, 16), Color3.fromRGB(60, 190, 120),  Color3.fromRGB(150, 225, 80)),
+	-- soft pink, solid (opaque) window, dark text
+	Lovely = mk(Color3.fromRGB(255, 233, 241), Color3.fromRGB(255, 98, 158), Color3.fromRGB(176, 108, 255),
+		{ text = Color3.fromRGB(62, 30, 52), mut = Color3.fromRGB(160, 104, 134), ov = Color3.fromRGB(214, 60, 120), bgT = 0 }),
+	-- premium cream + gold, solid (opaque) window, dark brown text
+	Gold   = mk(Color3.fromRGB(255, 246, 214), Color3.fromRGB(230, 148, 0), Color3.fromRGB(255, 198, 36),
+		{ text = Color3.fromRGB(64, 45, 8), mut = Color3.fromRGB(150, 118, 42), ov = Color3.fromRGB(176, 120, 0), bgT = 0 }),
+}
+local ORDER = { "Dark", "AMOLED", "Ocean", "Sunset", "Forest", "Lovely", "Gold" }
+if T.ov == nil then T.ov = WHITEC end
+local V = { theme = "Dark", anim = true, aura = true, notif = true, guiMul = 1, anchored = true, ox = 0, oy = 0 }
+pcall(function()
+	if isfile and readfile and isfile(FILE) then
+		local d = HttpService:JSONDecode(readfile(FILE))
+		if type(d) == "table" then
+			if THEMES[d.theme] then V.theme = d.theme end
+			if type(d.anim) == "boolean" then V.anim = d.anim end
+			if type(d.aura) == "boolean" then V.aura = d.aura end
+			if type(d.notif) == "boolean" then V.notif = d.notif end
+			if type(d.anchored) == "boolean" then V.anchored = d.anchored end
+			if type(d.guiMul) == "number" then V.guiMul = math.clamp(d.guiMul, 0.6, 1.3) end
+			if type(d.ox) == "number" then V.ox = d.ox end
+			if type(d.oy) == "number" then V.oy = d.oy end
+		end
+	end
+end)
+local pending = false
+local function save()
+	if pending then return end
+	pending = true
+	task.delay(0.6, function()
+		pending = false
+		pcall(function() if writefile then writefile(FILE, HttpService:JSONEncode(V)) end end)
+	end)
+end
+
+---------------------------------------------------------------- page + helpers
+local page = H.page
+for _, c in ipairs(page:GetChildren()) do c:Destroy() end
+local sc = newScroll(page)
+local order = 0
+local TW = 447 - 12 - 76
+
+local function textH(text, size, w)
+	local ok, v = pcall(function() return TextService:GetTextSize(text, size, T.font, Vector2.new(w, 10000)).Y end)
+	if ok and type(v) == "number" then return math.ceil(v) + 2 end
+	return math.ceil(#text * size * 0.56 / w) * (size + 3)
+end
+local function header(text)
+	order = order + 1
+	addHeader(sc, text, order)
+end
+local function card(h)
+	order = order + 1
+	return new("Frame", { Size = UDim2.new(1, 0, 0, h), BackgroundColor3 = WHITE, BackgroundTransparency = 0.94,
+		LayoutOrder = order, Parent = sc }, { corner(14), stroke(0.92) })
+end
+local function title(c, text)
+	new("TextLabel", { Position = UDim2.fromOffset(12, 11), Size = UDim2.new(1, -90, 0, 18), BackgroundTransparency = 1, Text = text,
+		Font = T.fontB, TextSize = 14, TextColor3 = T.text, TextXAlignment = Enum.TextXAlignment.Left, Parent = c })
+	return 33
+end
+local function desc(c, text, y, w)
+	local h = textH(text, 12, w)
+	new("TextLabel", { Position = UDim2.fromOffset(12, y), Size = UDim2.new(0, w, 0, h), BackgroundTransparency = 1, Text = text,
+		TextWrapped = true, Font = T.font, TextSize = 12, TextColor3 = T.mut, TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top, Parent = c })
+	return h
+end
+
+local function makeSwitch(parent, on, onChange)
+	local state = on
+	local track = new("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 12), Size = UDim2.fromOffset(44, 24),
+		BackgroundColor3 = WHITE, BackgroundTransparency = 0.82, Text = "", AutoButtonColor = false, Parent = parent }, { corner(12) })
+	local fill = new("Frame", { Size = UDim2.fromScale(1, 1), BackgroundColor3 = WHITE, BackgroundTransparency = on and 0 or 1,
+		Parent = track }, { corner(12), grad(0) })
+	local onPos, offPos = UDim2.new(1, -21, 0.5, 0), UDim2.new(0, 3, 0.5, 0)
+	local knob = new("Frame", { AnchorPoint = Vector2.new(0, 0.5), Position = on and onPos or offPos, Size = UDim2.fromOffset(18, 18),
+		BackgroundColor3 = WHITE, ZIndex = 2, Parent = track }, { corner(9) })
+	local lbl = new("TextLabel", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 40), Size = UDim2.fromOffset(44, 14),
+		BackgroundTransparency = 1, Text = on and "ON" or "OFF", Font = T.fontB, TextSize = 10, TextColor3 = T.mut, Parent = parent })
+	track.Activated:Connect(function()
+		state = not state
+		lbl.Text = state and "ON" or "OFF"
+		tween(fill, 0.2, { BackgroundTransparency = state and 0 or 1 })
+		tween(knob, 0.2, { Position = state and onPos or offPos })
+		if onChange then onChange(state) end
+	end)
+end
+local function toggleRow(name, text, on, onChange)
+	local dh = textH(text, 12, TW)
+	local c = card(33 + dh + 14)
+	local y = title(c, name)
+	desc(c, text, y, TW)
+	makeSwitch(c, on, onChange)
+end
+
+---------------------------------------------------------------- performance
+header("Performance")
+toggleRow("Aura Rendering",
+	"ON: the Auras players have earned are drawn around their avatars: Tier II Angel Halo, Tier III Cursed Hand, Tier IV Mahoraga Wheel (Tier V's Secret Aura is not ready yet). Only the 8 nearest players' auras are drawn. OFF: Auras are never loaded or checked, which saves memory and FPS on weaker devices.",
+	V.aura, function(v)
+		V.aura, T.aura = v, v
+		if T.setAuras then T.setAuras(v) end
+		save()
+		toast(v and "Aura rendering on" or "Aura rendering off")
+	end)
+toggleRow("Chat Rendering",
+	"ON (Smooth): messages pop in with a short animation, tabs slide and the background blurs. Looks best. OFF (Lite): everything appears instantly, the blur is removed and only the latest 40 messages per chat are kept, so it lags less on weak devices and very busy servers.",
+	V.anim, function(v)
+		V.anim, T.anim = v, v
+		CONFIG.MAX_MESSAGES = v and MAXMSG or 40
+		if H.blur and H.open() then tween(H.blur, 0.3, { Size = v and 14 or 0 }) end
+		save()
+		toast(v and "Smooth rendering" or "Lite rendering")
+	end)
+
+---------------------------------------------------------------- notifications
+header("Notifications")
+toggleRow("Notifications",
+	"ON: small pop-ups appear at the bottom left for new DMs, for unread DMs when the script loads, and for new messages in the server chat while the chat window is closed. They hide by themselves after 3 seconds, or tap the \195\151 to close one. OFF: no pop-ups at all (the unread dots still work).",
+	V.notif, function(v)
+		V.notif, T.notif = v, v
+		if not v and T.clearNotifs then T.clearNotifs() end
+		save()
+		toast(v and "Notifications on" or "Notifications off")
+	end)
+
+---------------------------------------------------------------- intro screen
+header("Intro Screen")
+toggleRow("Intro Screen",
+	"ON: the Saiki Rechat intro (how followers, tiers and ranking work) opens when the script loads. OFF: it stays hidden. You can also hide it with \"Don't show this again\" on its last page.",
+	T.introOn ~= false, function(v)
+		if T.setIntro then T.setIntro(v) end
+		toast(v and "Intro screen on" or "Intro screen off")
+	end)
+
+---------------------------------------------------------------- avatar frame (Tier IV picks one of two)
+header("Avatar Frame")
+do
+	local text = "Pick any frame you have unlocked: the frames of your Tier and every lower Tier, plus any secret frame a moderator gave you. Everyone sees the one you pick. Auto = the frame of your own Tier."
+	local dh = textH(text, 12, TW)
+	local c = card(33 + dh + 10 + 30 + 12)
+	local y = title(c, "Your frame")
+	desc(c, text, y, TW)
+	local grid = new("Frame", { Position = UDim2.fromOffset(12, y + dh + 10), Size = UDim2.new(1, -24, 0, 30), BackgroundTransparency = 1, Parent = c }, {
+		new("UIGridLayout", { CellSize = UDim2.fromOffset(100, 28), CellPadding = UDim2.fromOffset(6, 6), SortOrder = Enum.SortOrder.LayoutOrder }),
+	})
+	local chips = {}
+	local build
+	build = function()
+		for _, ch in ipairs(chips) do ch:Destroy() end
+		chips = {}
+		local opts = T.frameOptions and T.frameOptions(H.me) or {}
+		local cur = (T.frameChoice and T.frameChoice[H.me]) or "auto"
+		if type(cur) == "number" then cur = (cur == 2) and "t4b" or "t4a" end
+		for i, o in ipairs(opts) do
+			local sel = (o.key == cur)
+			local btn = new("TextButton", { BackgroundColor3 = WHITE, BackgroundTransparency = sel and 0.8 or 0.94, Text = o.label, Font = T.fontB,
+				TextSize = 12, TextColor3 = T.text, AutoButtonColor = false, TextTruncate = Enum.TextTruncate.AtEnd, LayoutOrder = i, Parent = grid }, { corner(12) })
+			local str = stroke(sel and 0.35 or 0.92)
+			str.Parent = btn
+			chips[#chips + 1] = btn
+			btn.Activated:Connect(function()
+				task.spawn(function()
+					local ok = T.setFrameChoice and T.setFrameChoice(o.key)
+					toast(ok and ("Frame: " .. o.label) or "Couldn't save your pick (publish the new DM rules)")
+					build()
+				end)
+			end)
+		end
+		local rows = math.max(1, math.ceil(#opts / 4))
+		local gh = rows * 28 + (rows - 1) * 6
+		grid.Size = UDim2.new(1, -24, 0, gh)
+		c.Size = UDim2.new(1, 0, 0, 33 + dh + 10 + gh + 12)
+	end
+	build()
+	H.onShow(5, build) -- unlocks can change while the script runs (followers, moderators)
+end
+
+---------------------------------------------------------------- theme
+header("Appearance")
+local setTheme
+do
+	local text = "Changes the window colours with a smooth fade. Dark is the default. AMOLED is pure black (great on OLED screens). Lovely is a soft pink and Gold a premium cream-and-gold look; both have a solid, see-through-free window."
+	local dh = textH(text, 12, 447 - 24)
+	local c = card(33 + dh + 10 + 36 + 12)
+	local y = title(c, "Theme")
+	desc(c, text, y, 447 - 24)
+	local row = new("Frame", { Position = UDim2.fromOffset(12, y + dh + 10), Size = UDim2.new(1, -24, 0, 36), BackgroundTransparency = 1, Parent = c })
+	local chips = {}
+	local busy = false
+	local function nudge(col) return Color3.new(math.min(1, col.R + 0.002), col.G, col.B) end
+	local function paintChips()
+		for name, ch in pairs(chips) do
+			local sel = (name == V.theme)
+			tween(ch.btn, 0.2, { BackgroundTransparency = sel and 0.8 or 0.94 })
+			tween(ch.str, 0.2, { Transparency = sel and 0.35 or 0.92 })
+		end
+	end
+	-- Theme engine (stateless): every colour is looked up by what it IS right now, so it never depends on which theme was
+	-- active before. A colour that belongs to any theme's palette (bg / accA / accB / text / mut) simply becomes the same
+	-- slot of the new theme; white (or a theme's overlay colour) on see-through surfaces becomes the new overlay colour.
+	local function ckey(c) return math.floor(c.R * 255 + 0.5) * 65536 + math.floor(c.G * 255 + 0.5) * 256 + math.floor(c.B * 255 + 0.5) end
+	local WHITEK = 16777215
+	local ROLE, OVSET = {}, {}
+	for _, th in pairs(THEMES) do
+		for _, r in ipairs({ "bg", "accA", "accB", "text", "mut" }) do ROLE[ckey(th[r])] = r end
+		if ckey(th.ov) ~= WHITEK then OVSET[ckey(th.ov)] = true end
+	end
+	local BG_ROLES = { bg = true, accA = true, accB = true }
+	local TX_ROLES = { text = true, mut = true, accA = true, accB = true }
+	local function hasGrad(o) return o:FindFirstChildOfClass("UIGradient") ~= nil end
+	local function bgRole(o)
+		local k = ckey(o.BackgroundColor3)
+		if k == WHITEK then
+			if o.BackgroundTransparency >= 0.5 and not hasGrad(o) then return "ov" end
+			return nil
+		end
+		if OVSET[k] then return "ov" end
+		local r = ROLE[k]
+		if r and BG_ROLES[r] then return r end
+		return nil
+	end
+	local function inButton(o)
+		local btn = gui:FindFirstChild("SaikiButton") -- the open/close button keeps its own look in every theme
+		return btn ~= nil and (o == btn or o:IsDescendantOf(btn))
+	end
+	local function recolor(th, instant)
+		local entries = {}
+		local function add(o, prop, role, allowed)
+			local c = o[prop]
+			local k = ckey(c)
+			local r = role
+			if not r then
+				r = ROLE[k]
+				if not (r and allowed[r]) then return end
+			end
+			local to = th[r]
+			if to and ckey(to) ~= k then entries[#entries + 1] = { o = o, p = prop, from = c, to = to } end
+		end
+		local list = gui:GetDescendants()
+		for i, o in ipairs(list) do
+			if not inButton(o) then
+				if o:IsA("GuiObject") then
+					add(o, "BackgroundColor3", bgRole(o), BG_ROLES)
+					if o:IsA("TextLabel") or o:IsA("TextButton") or o:IsA("TextBox") then
+						add(o, "TextColor3", nil, TX_ROLES)
+					elseif o:IsA("ScrollingFrame") then
+						add(o, "ScrollBarImageColor3", nil, TX_ROLES)
+					end
+				elseif o:IsA("UIStroke") then
+					local k = ckey(o.Color)
+					if (k == WHITEK or OVSET[k]) and ckey(th.ov) ~= k then entries[#entries + 1] = { o = o, p = "Color", from = o.Color, to = th.ov } end
+				elseif o:IsA("UIGradient") then
+					local kps, to, changed = o.Color.Keypoints, {}, false
+					for n, kp in ipairs(kps) do
+						local r = ROLE[ckey(kp.Value)]
+						if r and BG_ROLES[r] and ckey(th[r]) ~= ckey(kp.Value) then to[n] = th[r]; changed = true else to[n] = kp.Value end
+					end
+					if changed then entries[#entries + 1] = { o = o, seq = true, kps = kps, to = to } end
+				end
+			end
+			if i % 300 == 0 then task.wait() end
+		end
+		local function frame(e)
+			for _, en in ipairs(entries) do
+				if en.o.Parent then
+					if en.seq then
+						local out = {}
+						for n, kp in ipairs(en.kps) do out[n] = ColorSequenceKeypoint.new(kp.Time, kp.Value:Lerp(en.to[n], e)) end
+						en.o.Color = ColorSequence.new(out)
+					else
+						en.o[en.p] = en.from:Lerp(en.to, e)
+					end
+				end
+			end
+		end
+		if instant then
+			win.BackgroundTransparency = th.bgT
+			frame(1)
+			return
+		end
+		tween(win, 0.5, { BackgroundTransparency = th.bgT })
+		local t0 = os.clock()
+		while true do
+			local f = math.clamp((os.clock() - t0) / 0.5, 0, 1)
+			frame(f * f * (3 - 2 * f)) -- smooth ease in/out
+			if f >= 1 then break end
+			RunService.Heartbeat:Wait()
+		end
+		frame(1)
+	end
+	function setTheme(name, instant)
+		local th = THEMES[name]
+		if busy or not th then return end
+		busy = true
+		T.bg, T.accA, T.accB, T.text, T.mut, T.ov, T.bgT = th.bg, th.accA, th.accB, th.text, th.mut, th.ov, th.bgT
+		task.spawn(function()
+			local ok, err = pcall(recolor, th, instant)
+			if not ok then warn("[SAIKI RECHAT] theme change: " .. tostring(err)) end
+			busy = false
+		end)
+	end
+	-- things created later (new chat messages, popups...) get the theme's overlay colour as soon as they appear
+	H.bind(gui.DescendantAdded, function(o)
+		if ckey(T.ov) == WHITEK then return end
+		task.defer(function()
+			if not o.Parent or inButton(o) then return end
+			if o:IsA("GuiObject") then
+				if o.BackgroundColor3 == WHITEC and bgRole(o) == "ov" then o.BackgroundColor3 = T.ov end
+			elseif o:IsA("UIStroke") then
+				if o.Color == WHITEC then o.Color = T.ov end
+			end
+		end)
+	end)
+	for i, name in ipairs(ORDER) do
+		local th = THEMES[name]
+		local sel = (name == V.theme)
+		local btn = new("TextButton", { Position = UDim2.new((i - 1) / #ORDER, 0, 0, 0), Size = UDim2.new(1 / #ORDER, -5, 1, 0),
+			BackgroundColor3 = WHITE, BackgroundTransparency = sel and 0.8 or 0.94, Text = "", AutoButtonColor = false, Parent = row },
+			{ corner(12) })
+		local str = stroke(sel and 0.35 or 0.92)
+		str.Parent = btn
+		new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 5), Size = UDim2.fromOffset(26, 8),
+			BackgroundColor3 = WHITE, Parent = btn }, { corner(4),
+			new("UIGradient", { Color = ColorSequence.new(nudge(th.accA), nudge(th.accB)), Rotation = 0 }) })
+		new("TextLabel", { AnchorPoint = Vector2.new(0.5, 1), Position = UDim2.new(0.5, 0, 1, -4), Size = UDim2.new(1, 0, 0, 14),
+			BackgroundTransparency = 1, Text = name, Font = T.fontB, TextSize = 11, TextColor3 = T.text, Parent = btn })
+		chips[name] = { btn = btn, str = str }
+		btn.Activated:Connect(function()
+			if busy or name == V.theme then return end
+			V.theme = name
+			paintChips()
+			save()
+			setTheme(name)
+		end)
+	end
+end
+
+---------------------------------------------------------------- GUI size
+local reclamp
+do
+	local MINV, MAXV = 0.6, 1.3
+	local text = "Makes the chat window smaller or larger (60% to 130%). On small screens it can never grow past what fits. Let go of the slider to apply it."
+	local dh = textH(text, 12, TW)
+	local c = card(33 + dh + 10 + 26 + 12)
+	local y = title(c, "GUI Size")
+	desc(c, text, y, TW)
+	local pct = new("TextLabel", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -12, 0, 12), Size = UDim2.fromOffset(46, 18),
+		BackgroundTransparency = 1, Text = math.floor(V.guiMul * 100 + 0.5) .. "%", Font = T.fontB, TextSize = 13, TextColor3 = T.text,
+		TextXAlignment = Enum.TextXAlignment.Right, Parent = c })
+	local reset = new("TextButton", { AnchorPoint = Vector2.new(1, 0), Position = UDim2.new(1, -64, 0, 10), Size = UDim2.fromOffset(48, 22),
+		BackgroundColor3 = WHITE, BackgroundTransparency = 0.86, Text = "Reset", Font = T.fontB, TextSize = 11, TextColor3 = T.text,
+		AutoButtonColor = false, Parent = c }, { corner(11) })
+	local hit = new("TextButton", { Position = UDim2.fromOffset(12, y + dh + 10), Size = UDim2.new(1, -24, 0, 26), BackgroundTransparency = 1,
+		Text = "", AutoButtonColor = false, Parent = c })
+	local bar = new("Frame", { AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 0, 0.5, 0), Size = UDim2.new(1, 0, 0, 6),
+		BackgroundColor3 = WHITE, BackgroundTransparency = 0.86, Parent = hit }, { corner(3) })
+	local fillBar = new("Frame", { Size = UDim2.fromScale(0, 1), BackgroundColor3 = WHITE, Parent = bar }, { corner(3), grad(0) })
+	local knob = new("Frame", { AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0, 0.5), Size = UDim2.fromOffset(18, 18),
+		BackgroundColor3 = WHITE, ZIndex = 2, Parent = bar }, { corner(9), stroke(0.6) })
+	local value = V.guiMul
+	local function show(v)
+		local f = (v - MINV) / (MAXV - MINV)
+		fillBar.Size = UDim2.fromScale(f, 1)
+		knob.Position = UDim2.fromScale(f, 0.5)
+		pct.Text = math.floor(v * 100 + 0.5) .. "%"
+	end
+	show(value)
+	local function apply()
+		V.guiMul, T.guiMul = value, value
+		save()
+		if H.open() then tween(winScale, 0.28, { Scale = fitScale() }) end
+		if reclamp then reclamp() end
+	end
+	local dragging = false
+	local function fromX(x)
+		local f = math.clamp((x - bar.AbsolutePosition.X) / math.max(1, bar.AbsoluteSize.X), 0, 1)
+		value = math.floor((MINV + f * (MAXV - MINV)) / 0.05 + 0.5) * 0.05
+		value = math.clamp(value, MINV, MAXV)
+		show(value)
+	end
+	hit.InputBegan:Connect(function(i)
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			dragging = true
+			sc.ScrollingEnabled = false
+			fromX(i.Position.X)
+		end
+	end)
+	bind(UserInputService.InputChanged, function(i)
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			fromX(i.Position.X)
+		end
+	end)
+	bind(UserInputService.InputEnded, function(i)
+		if dragging and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then
+			dragging = false
+			sc.ScrollingEnabled = true
+			apply()
+		end
+	end)
+	reset.Activated:Connect(function() value = 1; show(value); apply() end)
+end
+
+---------------------------------------------------------------- anchor / unanchor
+do
+	local handle = new("TextButton", { Name = "DragHandle", AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 0),
+		Size = UDim2.fromOffset(170, 18), BackgroundTransparency = 1, Text = "", AutoButtonColor = false, Visible = not V.anchored,
+		ZIndex = 6, Parent = win })
+	new("Frame", { AnchorPoint = Vector2.new(0.5, 0), Position = UDim2.new(0.5, 0, 0, 5), Size = UDim2.fromOffset(44, 4),
+		BackgroundColor3 = WHITE, BackgroundTransparency = 0.55, ZIndex = 6, Parent = handle }, { corner(2) })
+	local function setPos(ox, oy)
+		local vp = gui.AbsoluteSize
+		local s = winScale.Scale
+		local mx = math.max(0, vp.X / 2 - 475 * s / 2)
+		local my = math.max(0, vp.Y / 2 - 375 * s / 2)
+		V.ox, V.oy = math.clamp(ox, -mx, mx), math.clamp(oy, -my, my)
+		win.Position = UDim2.new(0.5, V.ox, 0.5, V.oy)
+	end
+	reclamp = function() if not V.anchored then setPos(V.ox, V.oy) end end
+	bind(gui:GetPropertyChangedSignal("AbsoluteSize"), reclamp)
+	local drag
+	handle.InputBegan:Connect(function(i)
+		if V.anchored then return end
+		if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+			drag = { x = i.Position.X, y = i.Position.Y, ox = V.ox, oy = V.oy }
+		end
+	end)
+	bind(UserInputService.InputChanged, function(i)
+		if drag and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+			setPos(drag.ox + (i.Position.X - drag.x), drag.oy + (i.Position.Y - drag.y))
+		end
+	end)
+	bind(UserInputService.InputEnded, function(i)
+		if drag and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then
+			drag = nil
+			save()
+		end
+	end)
+	toggleRow("Anchor GUI",
+		"ON: the window stays centered on your screen. OFF: a small grab bar appears at the very top of the window; drag it to move the window anywhere, for example to keep the game visible. Your position is remembered. Turning Anchor back ON re-centers the window.",
+		V.anchored, function(v)
+			V.anchored = v
+			handle.Visible = not v
+			if v then
+				V.ox, V.oy = 0, 0
+				tween(win, 0.3, { Position = UDim2.fromScale(0.5, 0.5) })
+			end
+			save()
+			toast(v and "GUI anchored" or "Drag the bar at the top")
+		end)
+	if not V.anchored then reclamp() end
+end
+
+---------------------------------------------------------------- blocked players
+header("Blocked players")
+do
+	local listCard = card(80)
+	local function build()
+		if not listCard.Parent then return end
+		for _, c in ipairs(listCard:GetChildren()) do
+			if c:IsA("GuiObject") then c:Destroy() end
+		end
+		local arr = {}
+		for id, v in pairs(T.blocked or {}) do
+			arr[#arr + 1] = { id = tostring(id), n = v.n, u = v.u, t = v.t or 0 }
+		end
+		table.sort(arr, function(a, b) return a.t > b.t end)
+		local y = title(listCard, #arr > 0 and ("Blocked players (" .. #arr .. ")") or "Blocked players")
+		if #arr == 0 then
+			local dh = desc(listCard, "You haven't blocked anyone. Block someone from their profile card or from a message's long-press menu. You can also type !blocked in any chat box.", y, 447 - 24)
+			listCard.Size = UDim2.new(1, 0, 0, y + dh + 14)
+			return
+		end
+		for _, e in ipairs(arr) do
+			local row = new("Frame", { Position = UDim2.fromOffset(12, y), Size = UDim2.new(1, -24, 0, 44), BackgroundColor3 = WHITE,
+				BackgroundTransparency = 0.94, Parent = listCard }, { corner(12) })
+			new("ImageLabel", { Position = UDim2.fromOffset(6, 6), Size = UDim2.fromOffset(32, 32), BackgroundColor3 = WHITE,
+				BackgroundTransparency = 0.88, Image = H.thumb(e.id), Parent = row }, { corner(16) })
+			new("TextLabel", { Position = UDim2.fromOffset(46, 5), Size = UDim2.new(1, -134, 0, 18), BackgroundTransparency = 1,
+				Text = e.n or ("User " .. e.id), Font = T.fontB, TextSize = 13, TextColor3 = T.text, TextXAlignment = Enum.TextXAlignment.Left,
+				TextTruncate = Enum.TextTruncate.AtEnd, Parent = row })
+			new("TextLabel", { Position = UDim2.fromOffset(46, 23), Size = UDim2.new(1, -134, 0, 14), BackgroundTransparency = 1,
+				Text = (e.u and e.u ~= "") and ("@" .. e.u) or ("ID " .. e.id), Font = T.font, TextSize = 11, TextColor3 = T.mut,
+				TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Parent = row })
+			local ub = new("TextButton", { AnchorPoint = Vector2.new(1, 0.5), Position = UDim2.new(1, -8, 0.5, 0), Size = UDim2.fromOffset(72, 26),
+				BackgroundColor3 = WHITE, BackgroundTransparency = 0.86, Text = "Unblock", Font = T.fontB, TextSize = 12, TextColor3 = T.text,
+				AutoButtonColor = false, Parent = row }, { corner(13) })
+			ub.Activated:Connect(function()
+				if T.unblock then T.unblock(e.id) end
+				toast("Unblocked")
+			end)
+			y = y + 50
+		end
+		listCard.Size = UDim2.new(1, 0, 0, y + 8)
+	end
+	build()
+	if T.blockHooks then
+		T.blockHooks[#T.blockHooks + 1] = function() pcall(build) end
+	end
+	H.onShow(5, build)
+end
+
+---------------------------------------------------------------- community
+header("Community")
+do
+	local text = "Have a suggestion, a complaint or need help? Join the Discord and tell us. The invite link is copied to your clipboard (on PC it also tries to open Discord)."
+	local dh = textH(text, 12, 447 - 24)
+	local c = card(33 + dh + 10 + 38 + 8 + 14 + 12)
+	local y = title(c, "Suggestions / Complaints / Support")
+	desc(c, text, y, 447 - 24)
+	local by = y + dh + 10
+	local btn = new("TextButton", { Position = UDim2.fromOffset(12, by), Size = UDim2.new(1, -24, 0, 38), BackgroundColor3 = WHITE,
+		Text = "Join our Discord", Font = T.fontB, TextSize = 14, TextColor3 = INK2, AutoButtonColor = false, Parent = c },
+		{ corner(19), grad(20) })
+	new("TextLabel", { Position = UDim2.fromOffset(12, by + 46), Size = UDim2.new(1, -24, 0, 14), BackgroundTransparency = 1,
+		Text = "discord.gg/" .. DISCORD_CODE, Font = T.font, TextSize = 11, TextColor3 = T.mut, Parent = c })
+	btn.Activated:Connect(function()
+		local fn = setclipboard or toclipboard or (syn and syn.write_clipboard)
+		local copied = false
+		if fn then copied = pcall(fn, DISCORD) end
+		if H.request then
+			task.spawn(function()
+				pcall(function()
+					H.request({ Url = "http://127.0.0.1:6463/rpc?v=1", Method = "POST",
+						Headers = { ["Content-Type"] = "application/json", ["Origin"] = "https://discord.com" },
+						Body = HttpService:JSONEncode({ cmd = "INVITE_BROWSER", args = { code = DISCORD_CODE },
+							nonce = HttpService:GenerateGUID(false) }) })
+				end)
+			end)
+		end
+		toast(copied and "Invite link copied" or DISCORD)
+	end)
+end
+
+order = order + 1
+new("TextLabel", { Size = UDim2.new(1, 0, 0, 30), BackgroundTransparency = 1, Text = "Saiki Rechat V2.8  ·  settings save automatically on this device",
+	Font = T.font, TextSize = 11, TextColor3 = T.mut, LayoutOrder = order, Parent = sc })
+
+---------------------------------------------------------------- apply saved settings
+T.anim, T.aura, T.guiMul, T.notif = V.anim, V.aura, V.guiMul, V.notif
+if not V.anim then CONFIG.MAX_MESSAGES = 40 end
+if V.theme ~= "Dark" then setTheme(V.theme, true) end
+H.expose(V)
