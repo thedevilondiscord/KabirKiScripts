@@ -397,7 +397,18 @@ new("TextLabel",{Size=U2s(1,1),BackgroundTransparency=1,Text="[sticker]",Font=T.
 end)else
 target=new("Frame",{Size=U2n(),AutomaticSize=Enum.AutomaticSize.XY,LayoutOrder=3,BackgroundColor3=WHITE,BackgroundTransparency=mine and .05 or .9,Parent=col},{corner(16),pad(8,12),new("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,4),HorizontalAlignment=mine and Enum.HorizontalAlignment.Right or Enum.HorizontalAlignment.Left})})if mine then new("UIGradient",{Color=ColorSequence.new(T.accA,T.accB),Rotation=25,Parent=target})else stroke(.9).Parent=target end
 if m.reply then makeQuote(target,1)end
-new("TextLabel",{Size=U2n(),AutomaticSize=Enum.AutomaticSize.XY,BackgroundTransparency=1,Text=m.text,TextWrapped=true,RichText=false,Font=T.font,TextSize=15,TextColor3=T.text,TextXAlignment=mine and Enum.TextXAlignment.Right or XAL,LayoutOrder=2,Parent=target},{new("UISizeConstraint",{MaxSize=Vector2.new(maxW,math.huge)})})end
+local msgTxt=tostring(m.text or "")
+local okM,szM=pcall(function()return game:GetService("TextService"):GetTextSize(msgTxt,15,T.font,Vector2.new(maxW,100000))end)
+if not okM or typeof(szM)~="Vector2" then szM=Vector2.new(maxW,20)end
+local msgLbl=new("TextLabel",{Size=U2o(math.min(maxW,math.ceil(szM.X)+3),math.ceil(szM.Y)+2),BackgroundTransparency=1,Text=msgTxt,TextWrapped=true,RichText=false,Font=T.font,TextSize=15,TextColor3=T.text,TextXAlignment=mine and Enum.TextXAlignment.Right or XAL,TextYAlignment=Enum.TextYAlignment.Top,LayoutOrder=2,Parent=target})
+task.defer(function()
+if msgLbl and msgLbl.Parent then
+local tb=msgLbl.TextBounds
+if tb.Y>msgLbl.AbsoluteSize.Y+1 or tb.X>msgLbl.AbsoluteSize.X+1 then
+msgLbl.Size=U2o(math.min(maxW,math.ceil(tb.X)+3),math.ceil(tb.Y)+2)
+end
+end
+end)end
 if T.anim~=false then
 local sc=new("UIScale",{Scale=.88,Parent=target})tween(sc,.28,{Scale=1},Enum.EasingStyle.Back)end
 local item={key=key,mine=mine,uid=m.uid,name=m.name,text=m.text,stk=m.stk,col=col,row=row}self.items[key]=item
@@ -418,7 +429,8 @@ end
 function self.addAnnouncement(m)self.n+=1
 self.lastUid=nil
 local atBottom=list.CanvasPosition.Y>=list.AbsoluteCanvasSize.Y-list.AbsoluteSize.Y-40
-local ICE,FROST=Color3.fromRGB(130,232,255),Color3.fromRGB(232,248,255)local card=new("Frame",{Size=U2n(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,BackgroundColor3=WHITE,BackgroundTransparency=.02,LayoutOrder=self.n,Parent=list},{corner(8),new("UIStroke",{Color=Color3.fromRGB(120,224,255),Thickness=1.5,Transparency=.05,ApplyStrokeMode=Enum.ApplyStrokeMode.Border}),new("UIGradient",{Color=ColorSequence.new(Color3.fromRGB(24,78,120),Color3.fromRGB(7,22,42)),Rotation=90}),new("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,HorizontalAlignment=Enum.HorizontalAlignment.Center,Padding=UDim.new(0,5)}),new("UIPadding",{PaddingTop=UDim.new(0,10),PaddingBottom=UDim.new(0,10),PaddingLeft=UDim.new(0,14),PaddingRight=UDim.new(0,14)}),})new("TextLabel",{Size=U2n(1,0,0,14),BackgroundTransparency=1,Text="-  A N N O U N C E M E N T  -",Font=Enum.Font.GothamBlack,TextSize=11,TextColor3=ICE,LayoutOrder=1,Parent=card})new("TextLabel",{Size=U2n(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,Text=tostring(m.text or""),TextWrapped=true,Font=Enum.Font.GothamBlack,TextSize=16,TextColor3=FROST,TextXAlignment=Enum.TextXAlignment.Center,LayoutOrder=2,Parent=card})new("TextLabel",{Size=U2n(1,0,0,14),BackgroundTransparency=1,Text=tostring(m.name or"")..((m.title and m.title~="")and("   |   "..m.title)or""),Font=T.fontB,TextSize=11,TextColor3=Color3.fromRGB(130,178,206),LayoutOrder=3,Parent=card})self.rows[#self.rows+1]=card
+local red=m.red==true local ICE,FROST,STR,GA,GB,SUB=Color3.fromRGB(130,232,255),Color3.fromRGB(232,248,255),Color3.fromRGB(120,224,255),Color3.fromRGB(24,78,120),Color3.fromRGB(7,22,42),Color3.fromRGB(130,178,206)if red then ICE,FROST,STR,GA,GB,SUB=Color3.fromRGB(255,130,140),Color3.fromRGB(255,236,238),Color3.fromRGB(255,112,124),Color3.fromRGB(128,26,38),Color3.fromRGB(44,8,14),Color3.fromRGB(214,140,150)end
+local card=new("Frame",{Size=U2n(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,BackgroundColor3=WHITE,BackgroundTransparency=.02,LayoutOrder=self.n,Parent=list},{corner(8),new("UIStroke",{Color=STR,Thickness=1.5,Transparency=.05,ApplyStrokeMode=Enum.ApplyStrokeMode.Border}),new("UIGradient",{Color=ColorSequence.new(GA,GB),Rotation=90}),new("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,HorizontalAlignment=Enum.HorizontalAlignment.Center,Padding=UDim.new(0,5)}),new("UIPadding",{PaddingTop=UDim.new(0,10),PaddingBottom=UDim.new(0,10),PaddingLeft=UDim.new(0,14),PaddingRight=UDim.new(0,14)}),})local hdr=new("TextLabel",{Size=U2n(1,0,0,14),BackgroundTransparency=1,Text=red and"-  G L O B A L   A N N O U N C E M E N T  -"or"-  A N N O U N C E M E N T  -",Font=Enum.Font.GothamBlack,TextSize=11,TextColor3=ICE,TextScaled=red,LayoutOrder=1,Parent=card})if red then new("UITextSizeConstraint",{MaxTextSize=11,Parent=hdr})end new("TextLabel",{Size=U2n(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,Text=tostring(m.text or""),TextWrapped=true,Font=Enum.Font.GothamBlack,TextSize=16,TextColor3=FROST,TextXAlignment=Enum.TextXAlignment.Center,LayoutOrder=2,Parent=card})new("TextLabel",{Size=U2n(1,0,0,14),BackgroundTransparency=1,Text=tostring(m.name or"")..((m.title and m.title~="")and("   |   "..m.title)or""),Font=T.fontB,TextSize=11,TextColor3=SUB,LayoutOrder=3,Parent=card})self.rows[#self.rows+1]=card
 if#self.rows>CONFIG.MAX_MESSAGES then
 local old=table.remove(self.rows,1)local k=old:GetAttribute("k")if k then self.items[k]=nil;self.reacts[k]=nil;self.mineLock[k]=nil end
 old:Destroy()end
@@ -637,6 +649,10 @@ else
 plain()end
 end
 local tier=T.annTier and T.annTier(uid,false)if isM then decide(nil)elseif tier~=nil then decide(tier)else task.spawn(function()decide(T.annTier and T.annTier(uid,true))end)end
+end
+function T.showGlobalAnc(name,body,uid,silent)views[1].addAnnouncement({name=name,text=body,title="GLOBAL MODERATOR",red=true})if not silent then
+T.playAnc()markUnread(1,uid)if not isOpen and T.notify then T.notify("anc","Global announcement  ·  "..name,body)end
+end
 end
 local function serverHandler(key,m,silent)local uid=tonumber(m.uid)if not uid or banned[uid]or(T.hideUid and T.hideUid(uid))then return end
 local text,stk=parseMsg(m)if not text then return end
